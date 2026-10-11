@@ -5,18 +5,20 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pollinator Robot Animated</title>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
 <style>
-:root{--bg:#F1F2EF;--panel:#FBFBF9;--fg:#1D2125;--muted:#5F676F;--rule:#CFD4D1;--pollen:#B88E00;--nectar:#B9423A;--accent:#2F6BB0;--lip:#D9771E;--floor:#8A8E91;color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171A;--panel:#1C2024;--fg:#E7E9E6;--muted:#9AA2A9;--rule:#3A4147;--pollen:#E6B91F;--nectar:#E0685E;--accent:#7FB0EA;--lip:#F0973F;--floor:#3B3F43;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#14171A;--panel:#1C2024;--fg:#E7E9E6;--muted:#9AA2A9;--rule:#3A4147;--pollen:#E6B91F;--nectar:#E0685E;--accent:#7FB0EA;--lip:#F0973F;--floor:#3B3F43;color-scheme:dark}
+:root{--bg:#F1F2EF;--panel:#FBFBF9;--fg:#1D2125;--muted:#5F676F;--rule:#CFD4D1;--pollen:#B88E00;--nectar:#B9423A;--accent:#2F6BB0;--lip:#D9771E;--floor:#8A8E91;--good:#2E8B57;--wheel:#1F8A70;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171A;--panel:#1C2024;--fg:#E7E9E6;--muted:#9AA2A9;--rule:#3A4147;--pollen:#E6B91F;--nectar:#E0685E;--accent:#7FB0EA;--lip:#F0973F;--floor:#3B3F43;--good:#5CC98A;--wheel:#4FC3A1;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171A;--panel:#1C2024;--fg:#E7E9E6;--muted:#9AA2A9;--rule:#3A4147;--pollen:#E6B91F;--nectar:#E0685E;--accent:#7FB0EA;--lip:#F0973F;--floor:#3B3F43;--good:#5CC98A;--wheel:#4FC3A1;color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;display:flex;flex-direction:column}
-header{padding:12px 16px 10px;display:flex;flex-wrap:wrap;gap:10px 28px;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--rule)}
-h1{font-size:19px;margin:0;font-weight:600}
-.sub{font-size:13px;color:var(--muted)}
+header{padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule)}
+h1{font-size:17px;margin:0;font-weight:600}
+.sub{font-size:12px;color:var(--muted)}
 .sub a{color:var(--accent)}
-.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.controls{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
 .label{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-right:6px}
 .seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden;vertical-align:middle}
 .seg button,.btn{font:500 14px/1.2 inherit;font-family:inherit;padding:7px 12px;border:0;background:var(--panel);color:var(--fg);cursor:pointer}
@@ -25,42 +27,99 @@ h1{font-size:19px;margin:0;font-weight:600}
 .btn{border:1px solid var(--rule);border-radius:6px}
 .btn[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-main{flex:1;position:relative;min-height:340px;overflow:hidden}
+.app{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 400px}
+.left{display:flex;flex-direction:column;min-width:0;min-height:0}
+main{flex:1;position:relative;min-height:300px;overflow:hidden}
 #stage{position:absolute;inset:0}
 #stage canvas{display:block;width:100%;height:100%;touch-action:none}
+#schem{position:absolute;inset:0;width:100%;height:100%;display:none;background:var(--bg)}
+main.schem #schem{display:block}
+main.schem .labels{display:none}
 .labels{position:absolute;inset:0;pointer-events:none}
 .tag{font-size:12px;line-height:1.25;padding:2px 6px;border-radius:4px;background:var(--panel);border:1px solid var(--rule);color:var(--fg);white-space:nowrap;transform:translateY(-14px)}
-.tag.pollen{border-left:3px solid var(--pollen)}.tag.nectar{border-left:3px solid var(--nectar)}
+.tag.pollen{border-left:3px solid var(--pollen)}.tag.nectar{border-left:3px solid var(--nectar)}.tag.in{border-left:3px solid var(--good)}
 .tick{font-size:11px;color:var(--muted);transform:translateY(12px)}
 .htick{font-size:11px;color:var(--muted);transform:translateX(-26px)}
 .rim{font-size:11px;font-weight:600;color:var(--nectar);transform:translateX(-40px)}
-.tag.in{border-left:3px solid #2E9E5B}
-.steps{position:absolute;left:16px;top:12px;display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 32px)}
-.steps span{font-size:12px;padding:3px 8px;border-radius:999px;border:1px solid var(--rule);background:var(--panel);color:var(--muted)}
-.steps span.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.stats{position:absolute;right:16px;top:12px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:8px 12px;font-size:13px;min-width:210px;font-variant-numeric:tabular-nums}
-.stats div{display:flex;justify-content:space-between;gap:14px}
-.stats span{color:var(--muted)}
-.note{position:absolute;left:16px;bottom:16px;max-width:600px;right:16px;background:var(--panel);border:1px solid var(--rule);border-left:4px solid var(--accent);border-radius:6px;padding:10px 14px;font-size:14px;min-height:44px}
-.note.warn{border-left-color:var(--nectar)}
-.note b{font-weight:600}
-.slowmo{position:absolute;left:16px;top:44px;font-size:12px;color:var(--lip);font-weight:600;letter-spacing:.04em}
+.ovl{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none}
+.ovl>*{pointer-events:auto}
+.slowmo{font-size:11px;color:var(--lip);font-weight:700;letter-spacing:.05em;background:var(--panel);border:1px solid var(--rule);border-radius:999px;padding:2px 9px}
+.slowmo[hidden]{display:none}
+.ovl .seg button{padding:5px 10px;font-size:13px}
+.fab{position:absolute;right:12px;bottom:12px;display:flex;gap:8px}
+.fab button{width:40px;height:40px;border-radius:50%;border:1px solid var(--rule);background:var(--panel);color:var(--fg);font-size:15px;cursor:pointer;display:grid;place-items:center}
 #loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);pointer-events:none;text-align:center;padding:0 16px}
-#loading[hidden],.slowmo[hidden]{display:none}
-footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
+#loading[hidden]{display:none}
+footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center}
 .slider{display:inline-flex;align-items:center;gap:8px}
-.slider input{width:140px;accent-color:var(--lip)}
-.slider output{font-variant-numeric:tabular-nums;min-width:62px;font-weight:600}
-.fine{font-size:12px;color:var(--muted);flex-basis:100%}
-.fine i{display:inline-block;width:10px;height:10px;background:var(--lip);border-radius:2px;vertical-align:-1px;margin-right:4px}
-@media (max-width:760px){.stats{display:none}.note{font-size:13px;bottom:10px}.slider input{width:110px}.steps span{font-size:11px;padding:2px 6px}}
+.slider input{width:130px;accent-color:var(--lip)}
+.slider output{font-variant-numeric:tabular-nums;min-width:58px;font-weight:600}
+aside{border-left:1px solid var(--rule);display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.tabs{display:flex;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--panel);z-index:1}
+.tabs button{flex:1;padding:10px 4px;border:0;background:none;color:var(--muted);font:600 13px/1.2 inherit;font-family:inherit;border-bottom:2px solid transparent;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tabs .mob{display:none}
+.tabpanel{flex:1;overflow:auto;padding:14px 16px 20px}
+.tabpanel[hidden]{display:none}
+#steps{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:4px}
+#steps li{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--muted);padding:5px 8px;border-radius:6px}
+#steps li b{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--rule);font-size:12px}
+#steps li.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--fg)}
+#steps li.on b{background:var(--accent);border-color:var(--accent);color:#fff}
+#note{border-left:3px solid var(--accent);padding:4px 0 4px 12px;font-size:14px;min-height:64px}
+#note.warn{border-left-color:var(--nectar)}
+details{margin-top:16px;font-size:13px;color:var(--muted)}
+summary{cursor:pointer;color:var(--fg);font-weight:600}
+.stats{font-size:14px;font-variant-numeric:tabular-nums;display:grid;gap:4px}
+.stats div{display:flex;justify-content:space-between;gap:14px;border-bottom:1px solid var(--rule);padding:3px 0}
+.stats span{color:var(--muted)}
+.eq h3{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:16px 0 2px;font-weight:600}
+.eq h3:first-child{margin-top:0}
+.eq p{margin:2px 0;font-size:13px;color:var(--muted)}
+.eq .katex-display{margin:.35em 0;overflow-x:auto;overflow-y:hidden;padding:2px 0}
+.eq .katex{font-size:.9em}
+.vars{display:grid;grid-template-columns:auto 1fr;gap:1px 12px;font-size:13px;margin:4px 0}
+.vars span:nth-child(odd){font-weight:600}
+.ok{color:var(--good);font-weight:600}.bad{color:var(--nectar);font-weight:600}
+#schem text{fill:var(--fg);paint-order:stroke;stroke:var(--bg);stroke-linejoin:round}
+#schem .mut{fill:var(--muted)}
+#schem .acc{fill:var(--accent)}
+#schem .grn{fill:var(--good)}
+#schem .red{fill:var(--nectar)}
+.s-line,.s-faint,.s-part,.s-wheel,.s-hood,.s-lip,.s-dim,.s-open,.s-path,.s-lead,.s-cell,.s-floor{vector-effect:non-scaling-stroke;fill:none}
+.s-line{stroke:var(--fg);stroke-width:1.3}
+.s-faint{stroke:var(--muted);stroke-width:1;opacity:.55}
+.s-floor{stroke:var(--muted);stroke-width:1.5}
+.s-part{stroke:var(--fg);stroke-width:1.3;fill:color-mix(in srgb,var(--fg) 5%,transparent)}
+.s-wheel{stroke:var(--wheel);stroke-width:1.5;fill:color-mix(in srgb,var(--wheel) 18%,transparent)}
+.s-hood{stroke:var(--accent);stroke-width:2.5}
+.s-lip{stroke:var(--lip);stroke-width:3.5}
+.s-dim{stroke:var(--accent);stroke-width:1.2}
+.s-open{stroke:var(--good);stroke-width:4}
+.s-cell{stroke:var(--nectar);stroke-width:1.5;fill:color-mix(in srgb,var(--nectar) 7%,transparent)}
+.s-lead{stroke:var(--muted);stroke-width:.8}
+.s-path{stroke-width:1.6}
+@media (max-width:900px){
+  html,body{height:auto}
+  .app{display:block}
+  main{height:56vh;min-height:280px;flex:none}
+  aside{border-left:0;border-top:1px solid var(--rule)}
+  .tabs .mob{display:block}
+  .tabpanel{overflow:visible}
+  header{padding:8px 12px}
+  h1{font-size:15px}
+  .controls{gap:6px 12px}
+  header .seg button{padding:6px 8px;font-size:12.5px}
+  #ctl footer{border:0;padding:0;gap:12px 16px}
+  .slider input{width:120px}
+}
 </style>
 </head>
 <body>
 <header>
   <div>
-    <h1>Pollinator — intake and launch, animated</h1>
-    <div class="sub">FTC 2026–27 BIOBUZZ concept · pollen Ø2.8, nectar Ø3.6 · <a id="still" href="./">3D / AR viewer</a></div>
+    <h1>Pollinator — intake and launch</h1>
+    <div class="sub">FTC 2026–27 BIOBUZZ concept · <a id="still" href="./">3D / AR viewer</a></div>
   </div>
   <div class="controls">
     <div><span class="label">Version</span><span class="seg" id="rev">
@@ -73,25 +132,32 @@ footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap
       <button type="button" data-v="five" aria-pressed="false">5th ball</button></span></div>
   </div>
 </header>
-<main>
+<div class="app">
+<div class="left" id="left">
+<main id="main">
   <div id="stage"></div>
-  <div class="steps" id="steps"><span data-s="intake">1 Intake</span><span data-s="queue">2 Queue at gate</span><span data-s="feed">3 Gate opens</span><span data-s="hood">4 Flywheel + hood</span><span data-s="flight">5 Flight</span></div>
-  <div class="slowmo" id="slowmo" hidden>SLOW MOTION</div>
-  <div class="stats" id="stats"></div>
-  <div class="note" id="note">Loading…</div>
+  <svg id="schem" role="img" aria-label="Side-view schematic of the robot, the shot and the hive" preserveAspectRatio="xMidYMid meet"><g id="schemG"></g></svg>
+  <div class="ovl">
+    <div class="slowmo" id="slowmo" hidden>SLOW MOTION</div>
+    <span class="seg" id="mode" style="margin-left:auto">
+      <button type="button" data-v="3d" aria-pressed="true">3D</button>
+      <button type="button" data-v="schem" aria-pressed="false">Schematic</button></span>
+  </div>
+  <div class="fab">
+    <button type="button" id="restart" aria-label="Restart" title="Restart">↺</button>
+    <button type="button" id="play" aria-label="Pause" title="Pause / play" aria-pressed="false">❚❚</button>
+  </div>
   <div id="loading"><div><b>Loading model…</b><br>Needs a current browser with WebGL (Chrome, Safari, Edge or Firefox).</div></div>
 </main>
-<footer>
-  <button type="button" class="btn" id="play" aria-pressed="false">Pause</button>
-  <button type="button" class="btn" id="restart">Restart</button>
+<footer id="controls">
   <div><span class="label">Speed</span><span class="seg" id="speed">
     <button type="button" data-v="0.25" aria-pressed="false">¼×</button>
     <button type="button" data-v="0.5" aria-pressed="false">½×</button>
     <button type="button" data-v="1" aria-pressed="true">1×</button></span></div>
-  <label class="slider"><span class="label">Launch angle</span><input type="range" id="angle" min="45" max="75" step="1" value="60"><output id="angleOut">60°</output></label>
   <label class="slider"><span class="label">Hive distance</span><input type="range" id="dist" min="3" max="12" step="0.25" value="5"><output id="distOut">5 ft</output></label>
   <label class="slider"><span class="label">Exit speed</span><input type="range" id="vel" min="12" max="40" step="0.5" value="18.5"><output id="velOut">18.5 ft/s</output></label>
   <button type="button" class="btn" id="auto" aria-pressed="true">Auto speed</button>
+  <label class="slider"><span class="label">Launch angle</span><input type="range" id="angle" min="45" max="75" step="1" value="60"><output id="angleOut">60°</output></label>
   <button type="button" class="btn" id="rapid" aria-pressed="false">Rapid fire</button>
   <button type="button" class="btn" id="sweep" aria-pressed="false">Sweep 45–75°</button>
   <button type="button" class="btn" id="clear">Clear paths</button>
@@ -101,8 +167,33 @@ footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap
     <button type="button" data-v="mech" aria-pressed="false">Mechanism</button>
     <button type="button" data-v="shot" aria-pressed="false">Full shot</button>
     <button type="button" data-v="iso" aria-pressed="false">3D</button></span></div>
-  <div class="fine">Hive: the official BIOBUZZ HIVE (manual §9.6): pivot 43.95 in up, arm tilted 30°, upward cell opening 53.5–65.6 in above the tiles, facing the robot. Hive distance = front bumper to the hive pivot. Auto speed picks the exit speed that puts the ball through the middle of the opening.<br><i></i>Orange = adjustable hood exit lip. The CAD hood is fixed and launches at 60°; the lip shows how far the hood has to wrap for other angles (the ball leaves where the hood ends: exit point = 180° − launch angle round the wrap). Dashed line = where the next shot will go. Timing is slowed down so you can follow the ball. Balls are treated as stiff, so the soft flywheel tread takes the squeeze (the ball overlapping the wheel = tread compression). Flywheel dip per shot in rapid fire is an estimate.</div>
 </footer>
+</div>
+<aside>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" data-t="story" aria-selected="true">Story</button>
+    <button type="button" role="tab" data-t="math" aria-selected="false">Math</button>
+    <button type="button" role="tab" data-t="data" aria-selected="false">Data</button>
+    <button type="button" role="tab" data-t="ctl" aria-selected="false" class="mob">Controls</button>
+  </div>
+  <div class="tabpanel" id="story" role="tabpanel">
+    <ol id="steps">
+      <li data-s="intake"><b>1</b>Intake</li><li data-s="queue"><b>2</b>Queue at the gate</li><li data-s="feed"><b>3</b>Gate opens</li><li data-s="hood"><b>4</b>Flywheel + hood</li><li data-s="flight"><b>5</b>Flight to the hive</li>
+    </ol>
+    <div id="note">Loading…</div>
+    <details>
+      <summary>Notes on the model</summary>
+      <p><b>Hive</b> is the official BIOBUZZ HIVE (competition manual §9.6): pivot 43.95 in up, arm tilted 30°, upward cell opening 53.5–65.6 in above the tiles, facing the robot. Hive distance = front bumper to the hive pivot. Auto speed picks the exit speed that puts the ball through the middle of the opening.</p>
+      <p><b>Orange lip</b> = adjustable hood exit. The CAD hood is fixed at 60°; the lip shows how far the hood has to wrap for other angles (exit point = 180° − launch angle round the wrap).</p>
+      <p><b>Dashed line</b> = the ball in the air right now, or the next shot. Timing is slowed down so you can follow the ball.</p>
+      <p><b>Balls are stiff</b>, so the soft flywheel tread takes the squeeze (ball overlapping the wheel = tread compression). The flywheel dip per shot in rapid fire is an estimate.</p>
+    </details>
+  </div>
+  <div class="tabpanel eq" id="math" role="tabpanel" hidden></div>
+  <div class="tabpanel" id="data" role="tabpanel" hidden><div class="stats" id="stats"></div></div>
+  <div class="tabpanel" id="ctl" role="tabpanel" hidden></div>
+</aside>
+</div>
 <script type="module">
 import * as THREE from "three";
 import {OrbitControls} from "three/addons/controls/OrbitControls.js";
@@ -435,7 +526,7 @@ function armAngle(k, lift) {
 }
 
 // ---------------------------------------------------------------- UI state
-const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, auto: true};
+const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, auto: true, mode: "3d"};
 // exit speed (ft/s) that carries a ball of this type, launched at `angle`, through the middle of the opening
 function neededSpeed(type, angle) {
   const th = rad(180 - angle), rc = ballRc(ui.rev, type);
@@ -447,7 +538,7 @@ const shotSpeed = (type, angle) => ui.auto ? Math.min(40, neededSpeed(type, angl
 const rpmOf = v => Math.round(v * 12 * 2 * 60 / (Math.PI * 4) / 10) * 10;   // no-slip: wheel surface = 2x ball speed
 let R = null, S = null, ready = false;
 const noteEl = document.getElementById("note"), statsEl = document.getElementById("stats"), slowEl = document.getElementById("slowmo");
-const stepEls = [...document.querySelectorAll("#steps span")];
+const stepEls = [...document.querySelectorAll("#steps li")];
 // captions stay up at least 1.8 s so they can be read; the step chips update straight away
 let captions = [], captionAge = 99;
 function narrate(html, step, warn = false) {
@@ -644,7 +735,7 @@ function score(b) {
   b.to = fromHive(-6 + 6 * (k % 3), HV.base + b.r + 0.2 + 2 * b.r * Math.floor(k / 9), HV.half - HV.depth + b.r + 0.3 + 2 * b.r * (Math.floor(k / 3) % 3));
   finish(b, "in");
 }
-const trails = [];
+const trails = [], schTrails = [];
 const OUTCOME = {in: "IN", rim: "off the rim", over: "over the top", under: "under the cell", short: "short"};
 function finish(b, kind) {
   b.landed = true;
@@ -663,6 +754,8 @@ function finish(b, kind) {
   grp.add(line, tag);
   scene.add(grp);
   trails.push(grp);
+  schTrails.push({pts: pts.map(v => [v.z + HALF, v.y]), color: BALL[b.type].hex});
+  while (schTrails.length > 6) schTrails.shift();
   while (trails.length > 6) { const o = trails.shift(); o.traverse(c => c.geometry && c.geometry.dispose()); scene.remove(o); o.children[1].removeFromParent(); }
   trails.forEach((t, i) => t.children[0].material.opacity = 0.35 + 0.6 * (i + 1) / trails.length);
   S.last = OUTCOME[kind] + hTxt;
@@ -742,12 +835,16 @@ function director(dt) {
 // ---------------------------------------------------------------- apply sim state to the model
 let predictKey = "", predictLine = null, predictPts = [], predictOut = "";
 // dashed path: the ball that is in the hood or in the air right now, otherwise the next ball to be fired
-function predict() {
+function shotParams() {
   const live = S.balls.find(b => b.state === "hood" || (b.state === "flight" && !b.landed));
   const f = frontBall();
   const type = live ? live.type : f ? f.type : (S.balls.length ? S.balls[S.balls.length - 1].type : SCEN[ui.sc][0][0]);
   const angle = live ? live.angle : ui.sweep ? SWEEP[ui.shots % SWEEP.length] : ui.angle;
   const vel = live ? live.exitV : +shotSpeed(type, angle).toFixed(1);
+  return {live, type, angle, vel};
+}
+function predict() {
+  const {live, type, angle, vel} = shotParams();
   const key = [ui.rev, type, angle, vel, ui.dist, live ? "live" : "next"].join();
   if (key === predictKey) return;
   predictKey = key;
@@ -889,7 +986,7 @@ async function showRev() {
     scene.add(R.root);
     R.hoodKey = "";
     for (const o of R.cut) o.visible = !ui.cut;
-    for (const t of trails.splice(0)) { scene.remove(t); t.children[1].removeFromParent(); }
+    schTrails.length = 0; for (const t of trails.splice(0)) { scene.remove(t); t.children[1].removeFromParent(); }
     resetSim();
     loadingEl.hidden = true;
     ready = true;
@@ -904,11 +1001,12 @@ seg("view", v => { ui.view = v; });
 const playBtn = document.getElementById("play");
 playBtn.addEventListener("click", () => {
   ui.playing = !ui.playing;
-  playBtn.textContent = ui.playing ? "Pause" : "Play";
+  playBtn.textContent = ui.playing ? "❚❚" : "▶";
+  playBtn.setAttribute("aria-label", ui.playing ? "Pause" : "Play");
   playBtn.setAttribute("aria-pressed", !ui.playing);
 });
 document.getElementById("restart").addEventListener("click", () => ready && resetSim());
-document.getElementById("clear").addEventListener("click", () => { for (const t of trails.splice(0)) { scene.remove(t); t.children[1].removeFromParent(); } });
+document.getElementById("clear").addEventListener("click", () => { schTrails.length = 0; for (const t of trails.splice(0)) { scene.remove(t); t.children[1].removeFromParent(); } });
 const angleIn = document.getElementById("angle"), angleOut = document.getElementById("angleOut");
 angleIn.addEventListener("input", () => {
   ui.angle = +angleIn.value; angleOut.textContent = ui.angle + "°";
@@ -951,6 +1049,231 @@ cutBtn.addEventListener("click", () => {
 });
 if (location.protocol === "file:") document.getElementById("still").href = "Pollinator Robot 3D.html";
 
+
+// ---------------------------------------------------------------- math panel: the launch equation with live numbers
+function flyOutcome(type, angle, vel) {
+  const rc = ballRc(ui.rev, type), th = rad(180 - angle), r = BALL[type].r;
+  const p = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), v = new THREE.Vector3(0, Math.sin(th), Math.cos(th)).multiplyScalar(vel * 12);
+  for (let i = 0; i < 4000 && p.y > r; i++) {
+    const bz = toHive(p).z;
+    v.y -= G / 240; p.addScaledVector(v, 1 / 240);
+    const a = toHive(p);
+    if (bz > HV.half && a.z <= HV.half) { if (inOpening(a.x, a.y, r)) return "in"; if (a.y < HV.base) return "low"; }
+  }
+  return "out";
+}
+function speedWindow(type, angle, c) {
+  if (c == null || flyOutcome(type, angle, c) !== "in") return null;
+  let lo = c, hi = c;
+  while (lo > 5 && flyOutcome(type, angle, lo - 0.05) === "in") lo -= 0.05;
+  while (hi < 60 && flyOutcome(type, angle, hi + 0.05) === "in") hi += 0.05;
+  return [lo, hi];
+}
+function geom(type, angle) {          // launch point, aim point and the numbers that go into the equation
+  const th = rad(180 - angle), rc = ballRc(ui.rev, type), a = AIM();
+  const ex = FW.x + rc * Math.sin(th), hb = FW.z - rc * Math.cos(th), ax = a.z + HALF, hg = a.y;
+  return {ex, hb, ax, hg, x: ex - ax, dh: hg - hb};
+}
+const mathEl = document.getElementById("math");
+let mathKey = "";
+const tex = src => window.katex ? katex.renderToString(src, {displayMode: true, throwOnError: false}) : "<p><code>" + src + "</code></p>";
+const n1 = v => (+v).toFixed(1);
+function updateMath() {
+  if (mathEl.hidden) return;
+  const {live, type, angle, vel} = shotParams();
+  const key = [ui.rev, type, angle, vel, ui.dist, !!window.katex].join();
+  if (key === mathKey) return;
+  mathKey = key;
+  const g = geom(type, angle), t = rad(angle), need = neededSpeed(type, angle), v = vel * 12;
+  const yAt = g.hb + g.x * Math.tan(t) - G * g.x * g.x / (2 * v * v * Math.cos(t) ** 2);
+  const peak = g.hb + (v * Math.sin(t)) ** 2 / (2 * G);
+  const xmin = g.dh / Math.tan(t), dmin = (xmin - g.x + ui.dist) / 12;
+  const win = speedWindow(type, angle, need);
+  const R = hoodR(ui.rev, type), gap = R - 2, d = 2 * BALL[type].r, sq = Math.max(0, d - gap), rpm = rpmOf(vel);
+  const inside = flyOutcome(type, angle, vel) === "in";
+  const src = live ? "the ball in the air" : ui.auto ? "the next shot (auto speed)" : "the next shot (your speed)";
+  mathEl.innerHTML =
+    "<h3>Shot geometry</h3><p>Side view, for " + src + " (" + type + ", " + angle + "°).</p>" +
+    "<div class='vars'><span>x</span><span>" + n1(g.x) + " in · launch point to the middle of the opening</span>" +
+    "<span>h<sub>bot</sub></span><span>" + n1(g.hb) + " in · where the ball leaves the hood</span>" +
+    "<span>h<sub>goal</sub></span><span>" + n1(g.hg) + " in · middle of the opening (53.5–65.6)</span>" +
+    "<span>θ</span><span>" + angle + "° · launch angle</span><span>g</span><span>386 in/s²</span></div>" +
+    "<h3>Launch speed needed</h3>" +
+    tex("v_0=\\sqrt{\\dfrac{g\\,x^{2}}{2\\cos^{2}\\theta\\,\\bigl(x\\tan\\theta-(h_{goal}-h_{bot})\\bigr)}}") +
+    (need == null ? "<p class='bad'>Too close: x·tanθ is smaller than h<sub>goal</sub> − h<sub>bot</sub>, so no speed reaches the opening at " + angle + "°.</p>" :
+      tex("=\\sqrt{\\dfrac{386\\cdot" + n1(g.x) + "^{2}}{2\\cos^{2}" + angle + "^\\circ\\,(" + n1(g.x) + "\\tan" + angle + "^\\circ-" + n1(g.dh) + ")}}=" +
+          Math.round(need * 12) + "\\ \\tfrac{\\text{in}}{\\text{s}}=\\mathbf{" + n1(need) + "\\ \\tfrac{\\text{ft}}{\\text{s}}}")) +
+    "<h3>Height at the hive</h3>" +
+    tex("y(x)=h_{bot}+x\\tan\\theta-\\dfrac{g\\,x^{2}}{2v_0^{2}\\cos^{2}\\theta}") +
+    tex("=" + n1(g.hb) + "+" + n1(g.x) + "\\tan" + angle + "^\\circ-\\dfrac{386\\cdot" + n1(g.x) + "^{2}}{2(" + Math.round(v) + ")^{2}\\cos^{2}" + angle + "^\\circ}=" + n1(yAt) + "\\ \\text{in}") +
+    "<p>At " + vel + " ft/s: <span class='" + (inside ? "ok'>goes in" : "bad'>misses") + "</span> (opening 53.5–65.6 in, less the ball radius).</p>" +
+    "<h3>Speed window</h3>" +
+    (win ? "<p>Goes in from <b>" + n1(win[0]) + " to " + n1(win[1]) + " ft/s</b>, so ±" + ((win[1] - win[0]) / 2).toFixed(2) + " ft/s, or about ±" + Math.round((win[1] - win[0]) / 2 * 114.6) + " rpm at the flywheel. Simulated through the tilted opening.</p>"
+         : "<p class='bad'>No speed puts it in from here at " + angle + "°.</p>") +
+    "<h3>Peak height</h3>" +
+    tex("h_{max}=h_{bot}+\\dfrac{(v_0\\sin\\theta)^{2}}{2g}=" + n1(g.hb) + "+\\dfrac{(" + Math.round(v) + "\\sin" + angle + "^\\circ)^{2}}{2\\cdot386}=" + n1(peak) + "\\ \\text{in}") +
+    "<h3>Closest you can shoot</h3>" +
+    tex("x_{min}=\\dfrac{h_{goal}-h_{bot}}{\\tan\\theta}=\\dfrac{" + n1(g.dh) + "}{\\tan" + angle + "^\\circ}=" + n1(xmin) + "\\ \\text{in}") +
+    "<p>About " + dmin.toFixed(1) + " ft from the front bumper to the hive pivot. Closer than that, the ball can't climb to the opening at " + angle + "°.</p>" +
+    "<h3>Flywheel speed</h3>" +
+    tex("\\text{rpm}=\\dfrac{2v_0}{\\pi d_w}\\cdot60=\\dfrac{2(" + Math.round(v) + ")}{\\pi(4)}\\cdot60\\approx" + rpm.toLocaleString()) +
+    "<p>The ball rolls between the spinning tread and the still hood, so its centre moves at half the tread speed. No-slip estimate, so the real rpm will be higher. That's " + Math.round(rpm / 60) + "% of the 6000 rpm motor.</p>" +
+    "<h3>Hood squeeze</h3>" +
+    tex("s=d_{ball}-\\text{gap}=" + n1(d) + "-" + n1(gap) + "=" + n1(sq) + "\\ \\text{in}");
+}
+
+// ---------------------------------------------------------------- schematic: labelled side view drawn from the same simulation
+const schemSvg = document.getElementById("schem"), schemG = document.getElementById("schemG");
+let sBox = null;
+function rollerPos(k) {
+  const [ax, az] = ROLLERS[k];
+  if (ui.rev === "A") return [ax, az + S.lid];
+  const [jx, jz] = PIVOTS[k], a = armAngle(k, S.lift[k]), Y = az - jz, Z = ax - jx;
+  return [jx + Y * Math.sin(a) + Z * Math.cos(a), jz + Y * Math.cos(a) - Z * Math.sin(a)];
+}
+function ballXZ(b) {
+  if (b.state === "roll" || b.state === "reject") return [b.x, b.z];
+  if (b.state === "hood") return [FW.x + b.rad * Math.sin(rad(b.th)), FW.z - b.rad * Math.cos(rad(b.th))];
+  return [b.pos.z + HALF, b.pos.y];
+}
+const toXZ = v => [v.z + HALF, v.y];
+function drawSchem(dt) {
+  const W = schemSvg.clientWidth || 1, H = schemSvg.clientHeight || 1;
+  const mode = ui.view === "auto" ? S.camMode : ui.view === "mech" ? "mech" : "shot";
+  const tgt = mode === "mech" ? {x0: -8, x1: 25, z0: -2.8, z1: 12.8} : {x0: -ui.dist - 30, x1: W < 600 ? 40 : 32, z0: -10, z1: 84};
+  if (!sBox) sBox = {...tgt};
+  const kk = 1 - Math.exp(-dt * 6);
+  for (const q in tgt) sBox[q] += (tgt[q] - sBox[q]) * kk;
+  const bw = sBox.x1 - sBox.x0, bh = sBox.z1 - sBox.z0;
+  schemSvg.setAttribute("viewBox", sBox.x0 + " " + (-sBox.z1) + " " + bw + " " + bh);
+  const k = Math.max(bw / W, bh / H), fs = (W < 600 ? 11 : 12.5) * k, close = bw < 45;
+  const o = [];
+  const f2 = v => (+v).toFixed(2);
+  const L = (x1, z1, x2, z2, c, ex = "") => o.push(`<line class="${c}" x1="${f2(x1)}" y1="${f2(-z1)}" x2="${f2(x2)}" y2="${f2(-z2)}" ${ex}/>`);
+  const C = (x, z, r, c, ex = "") => o.push(`<circle class="${c}" cx="${f2(x)}" cy="${f2(-z)}" r="${f2(r)}" ${ex}/>`);
+  const PL = (pts, c, closed = false, ex = "") => o.push(`<${closed ? "polygon" : "polyline"} class="${c}" points="${pts.map(p => f2(p[0]) + "," + f2(-p[1])).join(" ")}" ${ex}/>`);
+  const TX = (x, z, str, cls = "", anchor = "start", sz = 1) => o.push(`<text x="${f2(x)}" y="${f2(-z)}" class="${cls}" text-anchor="${anchor}" font-size="${f2(fs * sz)}" stroke-width="${f2(3.5 * k)}">${str}</text>`);
+  const head = (x1, z1, x2, z2, col) => {
+    const d = Math.hypot(x2 - x1, z2 - z1) || 1, ux = (x2 - x1) / d, uz = (z2 - z1) / d, h = 7 * k, w = 3.5 * k;
+    PL([[x2, z2], [x2 - ux * h - uz * w, z2 - uz * h + ux * w], [x2 - ux * h + uz * w, z2 - uz * h - ux * w]], "", true, `style="fill:${col}"`);
+  };
+  const ARW = (x1, z1, x2, z2, col = "var(--accent)", both = false) => {
+    L(x1, z1, x2, z2, "s-dim", `style="stroke:${col}"`); head(x1, z1, x2, z2, col); if (both) head(x2, z2, x1, z1, col);
+  };
+  const arc = (cx, cz, r, t0, t1, n = 32) => { const pts = []; for (let i = 0; i <= n; i++) { const t = rad(t0 + (t1 - t0) * i / n); pts.push([cx + r * Math.sin(t), cz - r * Math.cos(t)]); } return pts; };
+  const lab = (ax, az, lx, lz, str, anchor = "start") => { L(ax, az, lx, lz, "s-lead"); TX(lx + (anchor === "end" ? -0.25 : anchor === "start" ? 0.25 : 0), lz + (lz >= az ? 0.25 : -fs * 0.9), str, "", anchor); };
+
+  // floor and distance ticks
+  L(sBox.x0 - 20, 0, sBox.x1 + 20, 0, "s-floor");
+  if (!close) for (let ft = 0; ft <= 14; ft++) { const x = -12 * ft; L(x, 0, x, -(ft % 2 ? 1 : 2), "s-faint"); if (ft % 2 === 0) TX(x, -2 - fs * 1.1, ft + " ft", "mut", "middle", 0.85); }
+  // ---- hive (red, upward cell facing the robot)
+  const hv = (x, y, z) => toXZ(fromHive(x, y, z));
+  const px = -ui.dist;
+  L(px - HV.fd / 2, 0, px, HV.py + 1, "s-faint"); L(px + HV.fd / 2, 0, px, HV.py + 1, "s-faint");
+  for (const z0 of [HV.half - HV.depth, -HV.half]) PL([hv(0, HV.base, z0), hv(0, HV.base + HV.peak, z0), hv(0, HV.base + HV.peak, z0 + HV.depth), hv(0, HV.base, z0 + HV.depth)], "s-cell", true);
+  PL([hv(0, HV.base - 0.9, -HV.half), hv(0, HV.base - 0.9, HV.half)], "s-line");
+  C(px, HV.py, 0.8, "s-part");
+  const ob = hv(0, HV.base, HV.half), ot = hv(0, HV.base + HV.peak, HV.half);
+  PL([ob, ot], "s-open");
+  if (!close) {
+    TX(ob[0] + 1.2, ob[1] - 0.5, "53.5 in", "red", "start", 0.95);
+    TX(ot[0] + 1.2, ot[1] + 0.3, "65.6 in", "red", "start", 0.95);
+    TX(ot[0] - 2, ot[1] + 2.2 + fs, "upward cell", "grn", "end", 0.9);
+    TX(px, HV.py + 2.2, "pivot 43.95 in", "mut", "middle", 0.85);
+  }
+  // ---- robot body
+  for (const wx of [2.75, 14.75]) C(wx, 2.045, 2.045, "s-faint");
+  PL([[0, 0.75], [17.5, 0.75], [17.5, 2.64], [0, 2.64]], "s-faint", true);
+  PL([[0, 0.025], [2.5, 0.875], [2.5, 1.0], [0, 0.15]], "s-part", true);
+  L(2.5, 1.0, 10.8, 1.0, "s-line"); L(2.5, 1.25, 11.5, 1.25, "s-faint");
+  PL([[0.75, 2.64], [1.25, 2.64], [1.25, 9.0], [0.75, 9.0]], "s-faint", true);
+  PL([[0.9, 9.0], [2.6, 10.2], [3.1, 9.4], [1.4, 8.2]], "s-part", true);
+  // flywheel, motor, hood + lip
+  C(FW.x, FW.z, FW_R, "s-wheel"); C(FW.x, FW.z, 0.8, "s-faint");
+  for (let i = 0; i < 3; i++) { const a = -S.fwAng + i * 2.094; L(FW.x + 0.8 * Math.sin(a), FW.z + 0.8 * Math.cos(a), FW.x + 1.9 * Math.sin(a), FW.z + 1.9 * Math.cos(a), "s-line"); }
+  C(12, 3.2, 0.72, "s-faint");
+  const te = 180 - S.lip, Rh = ui.rev === "A" ? 4.5 : S.bandR;
+  PL(ui.rev === "A" ? arc(FW.x, FW.z, 4.5, -14, CLIP_T) : (() => { const p = []; for (let i = 0; i <= 48; i++) { const t = -14 + (CLIP_T + 14) * i / 48, r = bandR(t, Rh); p.push([FW.x + r * Math.sin(rad(t)), FW.z - r * Math.cos(rad(t))]); } return p; })(), "s-hood");
+  if (te > CLIP_T + 0.05) PL(arc(FW.x, FW.z, Rh, CLIP_T, te), "s-lip");
+  // rollers + lid / arms
+  const rp = [0, 1, 2].map(rollerPos);
+  if (ui.rev === "A") {
+    PL([[0.3, 6 + S.lid], [10.2, 6 + S.lid], [10.2, 6.125 + S.lid], [0.3, 6.125 + S.lid]], "s-part", true);
+    for (const lx of [1.8, 9.6]) { L(lx, 6.8, lx - 0.5, 6.06 + S.lid, "s-line"); C(lx, 6.8, 0.12, "s-line"); }
+  } else rp.forEach(([x, z], k2) => { L(PIVOTS[k2][0], PIVOTS[k2][1], x, z, "s-line", 'style="stroke:#3A6FC4;stroke-width:4"'); C(PIVOTS[k2][0], PIVOTS[k2][1], 0.25, "s-part"); });
+  rp.forEach(([x, z]) => { C(x, z, ROLLER_R, "s-wheel"); for (let i = 0; i < 3; i++) { const a = -S.rollerAng + i * 2.094; L(x + 0.4 * Math.sin(a), z + 0.4 * Math.cos(a), x + 0.95 * Math.sin(a), z + 0.95 * Math.cos(a), "s-line"); } });
+  // gate (fades as the flipper swings out of the channel)
+  L(10.2, 1.0, 10.2, 3.2, "s-line", `style="stroke:var(--accent);stroke-width:3;opacity:${f2(1 - 0.85 * S.gate)}"`);
+  // trails, live path, dashed prediction
+  for (const t of schTrails) PL(t.pts, "s-path", false, `style="stroke:${t.color};opacity:.55"`);
+  for (const b of S.balls) if (b.state === "flight" && !b.landed && b.trail.length > 1) PL(b.trail.map(toXZ), "s-path", false, `style="stroke:${BALL[b.type].hex}"`);
+  if (predictPts.length) PL(predictPts.map(toXZ), "s-path", false, `style="stroke:${BALL[shotParams().type].hex};stroke-dasharray:6 5;opacity:.85"`);
+  // balls
+  for (const b of S.balls) { if (b.state === "gone") continue; const [x, z] = ballXZ(b); C(x, z, b.r, "", `style="fill:${BALL[b.type].hex};stroke:var(--fg);stroke-width:1;vector-effect:non-scaling-stroke;opacity:${b.state === "reject" ? 0.5 : 1}"`); }
+
+  if (close) {   // part labels with leader lines
+    const lidZ = 6.1 + S.lid;
+    lab(rp[0][0] - 0.7, rp[0][1] + 0.7, -4.5, 7.2, "Roller 1", "end");
+    lab(rp[1][0], rp[1][1] + 1, 3.6, 10.4, "Roller 2", "end");
+    lab(rp[2][0], rp[2][1] + 1, 8.4, 10.4, "Roller 3", "end");
+    if (ui.rev === "A") lab(5.2, lidZ, 5.6, 11.9, "Floating lid · +" + S.lid.toFixed(2) + " in", "middle");
+    else lab((PIVOTS[1][0] + rp[1][0]) / 2, (PIVOTS[1][1] + rp[1][1]) / 2, 5.6, 11.9, "Spring arms · " + S.lift.map(l => l.toFixed(1)).join(" / ") + " in", "middle");
+    lab(FW.x, FW.z + FW_R, 13.2, 11.9, "Flywheel 4 in", "start");
+    const hp = [FW.x + Rh * Math.sin(rad(70)), FW.z - Rh * Math.cos(rad(70))];
+    lab(hp[0], hp[1], 18.4, 9.6, "Hood · gap " + (Rh - 2).toFixed(1) + " in", "start");
+    lab(12.6, 3.2, 15.2, -1.6, "6000 rpm motor", "start");
+    lab(10.2, 1.4, 10.2, -1.6, "Gate " + (S.gate > 0.85 ? "open" : "closed"), "middle");
+    lab(5.5, 1.25, 5.5, -1.6, "Rails", "middle");
+    lab(1.2, 0.45, -1.8, -1.6, "Entry lip", "middle");
+    lab(1.9, 9.4, -2.2, 10.6, "Camera", "end");
+    TX(sBox.x0 + 0.6, sBox.z1 - fs * 1.4, "Balls held " + (S.held || 0) + " / " + LIMIT, "mut", "start", 0.95);
+  } else {      // shot dimensions, like the hand sketch
+    const sp = shotParams(), gm = geom(sp.type, sp.angle), xb = -6.5;
+    const E = [gm.ex, gm.hb], A = [gm.ax, gm.hg];
+    L(E[0], E[1], E[0], xb, "s-faint", 'style="stroke-dasharray:3 3"'); L(A[0], A[1], A[0], xb, "s-faint", 'style="stroke-dasharray:3 3"');
+    ARW(A[0], xb, E[0], xb, "var(--accent)", true);
+    TX((A[0] + E[0]) / 2, xb - fs * 1.2, "x = " + n1(gm.x) + " in", "acc", "middle");
+    const hx = A[0] + 9;
+    ARW(hx, 0, hx, A[1], "var(--accent)", true); L(A[0], A[1], hx + 1, A[1], "s-faint", 'style="stroke-dasharray:3 3"');
+    TX(hx + 1, A[1] / 2, "h<tspan baseline-shift='sub' font-size='70%'>goal</tspan> = " + n1(gm.hg) + " in", "acc", "start");
+    const bx = E[0] + 4;
+    ARW(bx, 0, bx, E[1], "var(--accent)", true);
+    TX(bx + 1, E[1] / 2 - fs * 0.3, "h<tspan baseline-shift='sub' font-size='70%'>bot</tspan> = " + n1(gm.hb) + " in", "acc", "start");
+    L(E[0], E[1], E[0] - 14, E[1], "s-faint", 'style="stroke-dasharray:3 3"');
+    const ra = 9, pts = [];
+    for (let i = 0; i <= 20; i++) { const a = rad(180 - sp.angle * i / 20); pts.push([E[0] + ra * Math.cos(a), E[1] + ra * Math.sin(a)]); }
+    PL(pts, "s-dim");
+    const mid = rad(180 - sp.angle / 2);
+    TX(E[0] + (ra + 2) * Math.cos(mid), E[1] + (ra + 2) * Math.sin(mid) - fs * 0.3, "θ = " + sp.angle + "°", "acc", "end");
+    const dir = [-Math.cos(rad(sp.angle)), Math.sin(rad(sp.angle))], vl = 16;
+    ARW(E[0], E[1], E[0] + dir[0] * vl, E[1] + dir[1] * vl, "var(--lip)");
+    TX(E[0] + dir[0] * vl + 1, E[1] + dir[1] * vl + 1, "v<tspan baseline-shift='sub' font-size='70%'>0</tspan> = " + sp.vel + " ft/s", "", "start");
+    const gx = (A[0] + E[0]) / 2;
+    ARW(gx, 80, gx, 71, "var(--fg)");
+    TX(gx + 1.5, 74.5, "g = 386 in/s²", "", "start", 0.95);
+    C(A[0], A[1], 0.7, "", 'style="fill:var(--good)"');
+  }
+  schemG.innerHTML = o.join("");
+}
+
+// ---------------------------------------------------------------- tabs, view mode, mobile layout
+const tabBtns = [...document.querySelectorAll(".tabs button")];
+function selectTab(t) {
+  for (const b of tabBtns) b.setAttribute("aria-selected", b.dataset.t === t);
+  for (const id of ["story", "math", "data", "ctl"]) document.getElementById(id).hidden = id !== t;
+  if (t === "math") { mathKey = ""; updateMath(); }
+}
+for (const b of tabBtns) b.addEventListener("click", () => selectTab(b.dataset.t));
+const mainEl = document.getElementById("main");
+seg("mode", v => { ui.mode = v; mainEl.classList.toggle("schem", v === "schem"); sBox = null; });
+const mq = matchMedia("(max-width: 900px)"), ctlEl = document.getElementById("controls");
+function placeControls() {
+  if (mq.matches) document.getElementById("ctl").appendChild(ctlEl);
+  else { document.getElementById("left").appendChild(ctlEl); if (!document.getElementById("ctl").hidden) selectTab("story"); }
+}
+mq.addEventListener("change", placeControls);
+placeControls();
+
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
   renderer.setSize(w, h, false);
@@ -979,10 +1302,11 @@ renderer.setAnimationLoop(now => {
     applyState();
     showCaptions(dt);
     updateCamera(dt);
+    if (ui.mode === "schem") drawSchem(dt);
+    updateMath();
   }
   controls.update();
-  renderer.render(scene, camera);
-  labels.render(scene, camera);
+  if (ui.mode !== "schem") { renderer.render(scene, camera); labels.render(scene, camera); }
 });
 showRev();
 </script>
