@@ -729,7 +729,7 @@ function step(dt) {
     const dth = HOOD_DEG_S * dt;
     b.th += dth;
     b.rad = approach(b.rad, b.rc, 1.5 * dt);
-    b.spin += rad(dth) * b.rad / b.r;
+    b.spin += rad(dth) * (b.rad / b.r + 1);   // rolling on the hood: absolute spin = v / r (holder turns -dtheta)
     if (b.th > b.th0 + 75) S.camMode = "shot";   // start pulling back so the flight is framed when it leaves
     if (b.th >= b.exitT) launch(b);
   }
@@ -1399,7 +1399,7 @@ function drawSchem(dt) {
   PL([[0.9, 9.0], [2.6, 10.2], [3.1, 9.4], [1.4, 8.2]], "s-part", true);
   // flywheel, motor, hood + lip
   C(FW.x, FW.z, fwR(), "s-wheel"); C(FW.x, FW.z, 0.8, "s-faint");
-  for (let i = 0; i < 3; i++) { const a = -S.fwAng + i * 2.094; L(FW.x + 0.8 * Math.sin(a), FW.z + 0.8 * Math.cos(a), FW.x + 1.9 * Math.sin(a), FW.z + 1.9 * Math.cos(a), "s-line"); }
+  for (let i = 0; i < 3; i++) { const a = S.fwAng + i * 2.094; L(FW.x + 0.8 * Math.sin(a), FW.z + 0.8 * Math.cos(a), FW.x + 1.9 * Math.sin(a), FW.z + 1.9 * Math.cos(a), "s-line"); }
   C(12, 3.2, 0.72, "s-faint");
   const te = 180 - S.lip, Rh = ui.rev === "A" ? 4.5 : S.bandR;
   PL(ui.rev === "A" ? arc(FW.x, FW.z, 4.5, -14, CLIP_T) : (() => { const p = []; for (let i = 0; i <= 48; i++) { const t = -14 + (CLIP_T + 14) * i / 48, r = bandR(t, Rh); p.push([FW.x + r * Math.sin(rad(t)), FW.z - r * Math.cos(rad(t))]); } return p; })(), "s-hood");
@@ -1410,7 +1410,7 @@ function drawSchem(dt) {
     PL([[0.3, 6 + S.lid], [10.2, 6 + S.lid], [10.2, 6.125 + S.lid], [0.3, 6.125 + S.lid]], "s-part", true);
     for (const lx of [1.8, 9.6]) { L(lx, 6.8, lx - 0.5, 6.06 + S.lid, "s-line"); C(lx, 6.8, 0.12, "s-line"); }
   } else rp.forEach(([x, z], k2) => { L(PIVOTS[k2][0], PIVOTS[k2][1], x, z, "s-line", 'style="stroke:#3A6FC4;stroke-width:4"'); C(PIVOTS[k2][0], PIVOTS[k2][1], 0.25, "s-part"); });
-  rp.forEach(([x, z]) => { C(x, z, ROLLER_R, "s-wheel"); for (let i = 0; i < 3; i++) { const a = -S.rollerAng + i * 2.094; L(x + 0.4 * Math.sin(a), z + 0.4 * Math.cos(a), x + 0.95 * Math.sin(a), z + 0.95 * Math.cos(a), "s-line"); } });
+  rp.forEach(([x, z]) => { C(x, z, ROLLER_R, "s-wheel"); for (let i = 0; i < 3; i++) { const a = S.rollerAng + i * 2.094; L(x + 0.4 * Math.sin(a), z + 0.4 * Math.cos(a), x + 0.95 * Math.sin(a), z + 0.95 * Math.cos(a), "s-line"); } });
   // gate (fades as the flipper swings out of the channel)
   L(10.2, 1.0, 10.2, 3.2, "s-line", `style="stroke:var(--accent);stroke-width:3;opacity:${f2(1 - 0.85 * S.gate)}"`);
   // trails, live path, dashed prediction
@@ -1518,6 +1518,7 @@ renderer.setAnimationLoop(now => {
   if (ui.mode !== "schem") { renderer.render(scene, camera); labels.render(scene, camera); }
 });
 showRev();
+window.__pollinator = () => ({R, S, THREE});   // debug hook for automated checks
 </script>
 </body>
 </html>
