@@ -111,6 +111,7 @@ const ROLLERS = [[0.75, 3.4], [4.5, 4.4], [9.0, 4.4]];
 const PIVOTS = [[2.6, 5.4], [2.6, 5.4], [6.75, 5.6]];          // Rev B arm pivots (jackshafts)
 const BALL = {pollen: {r: 1.4, hex: "#E2B714"}, nectar: {r: 1.8, hex: "#C0392B"}};
 const SQ = [0.9, 0.57, 0.57]; // roller compression before it has to lift (pollen rides under at rest; roller 1 sits low over the entry lip)
+const COAST_DECEL = 8;     // in/s^2 rolling on the rails: coasts ~3 in from intake speed
 const V_IN = 7;            // ball speed through the intake, in/s (slowed for viewing)
 const HOOD_DEG_S = 150;    // ball travel round the hood, deg/s (slow motion)
 const FLIGHT_SCALE = 0.45; // flight plays at 0.45x real time
@@ -366,7 +367,7 @@ function makeBall(type) {
   mesh.scale.setScalar(r);
   mesh.castShadow = true;
   spinner.add(mesh); holder.add(spinner); scene.add(holder);
-  return {type, r, x: -9, z: r, state: "roll", spin: 0, moving: true, holder, spinner, sq: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), trail: []};
+  return {type, r, x: -9, z: r, state: "roll", v: V_IN, spin: 0, moving: true, holder, spinner, sq: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), trail: []};
 }
 function resetSim() {
   captions = []; captionAge = 99;
@@ -404,7 +405,9 @@ function step(dt) {
   // a ball moves if a roller is actually pressing on it (or the robot is still driving onto it)
   for (const b of rolling) {
     b.driven = b.x < 0.3 || ROLLERS.some(([ax, az], k) => Math.hypot(b.x - ax, b.z - az - S.lift[k]) < b.r + ROLLER_R);
-    b.nx = b.x + (b.driven ? V_IN * dt : 0);
+    // a roller sets the ball to its surface speed; between rollers it coasts along the rails and slows
+    b.v = b.driven ? V_IN : Math.max(0, b.v - COAST_DECEL * dt);
+    b.nx = b.x + b.v * dt;
   }
   const order = rolling.slice().sort((a, b) => a.x - b.x);
   for (let i = 0; i + 1 < order.length; i++) {           // a driven ball pushes the ones ahead of it
@@ -421,6 +424,7 @@ function step(dt) {
   for (const b of rolling) {
     const dx = b.nx - b.x;
     b.moving = dx > 1e-5;
+    b.v = dx / dt;
     b.x = b.nx; b.z = groundZ(b.x, b.r); b.spin += dx / b.r;
     if (b.x > 10.0 && Math.hypot(b.x - FW.x, b.z - FW.z) <= FW_R + b.r - 0.1) capture(b);
   }
