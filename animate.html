@@ -155,6 +155,7 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
     <button type="button" data-v="0.5" aria-pressed="false">½×</button>
     <button type="button" data-v="1" aria-pressed="true">1×</button></span></div>
   <label class="slider"><span class="label">Hive distance</span><input type="range" id="dist" min="3" max="12" step="0.25" value="5"><output id="distOut">5 ft</output></label>
+  <label class="slider"><span class="label">Angle to hive</span><input type="range" id="bearing" min="-60" max="60" step="5" value="0"><output id="bearingOut">0° (head-on)</output></label>
   <label class="slider"><span class="label">Exit speed</span><input type="range" id="vel" min="12" max="40" step="0.5" value="18.5"><output id="velOut">18.5 ft/s</output></label>
   <button type="button" class="btn" id="auto" aria-pressed="true">Auto speed</button>
   <label class="slider"><span class="label">Launch angle</span><input type="range" id="angle" min="45" max="75" step="1" value="60"><output id="angleOut">60°</output></label>
@@ -166,6 +167,7 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
     <button type="button" data-v="auto" aria-pressed="true">Auto</button>
     <button type="button" data-v="mech" aria-pressed="false">Mechanism</button>
     <button type="button" data-v="shot" aria-pressed="false">Full shot</button>
+    <button type="button" data-v="top" aria-pressed="false">Top</button>
     <button type="button" data-v="iso" aria-pressed="false">3D</button></span></div>
 </footer>
 </div>
@@ -231,9 +233,29 @@ const gateStop = r => 10.2 - r - 0.05;
 const HV = {py: 43.95, tilt: 30, half: 42.91 / 2, depth: 12.04, base: -1.36, sh: 7.61, peak: 14, w: 10, sep: 25.5, fw: 49.46, fd: 38.95};
 const HS = Math.sin(HV.tilt * Math.PI / 180), HC = Math.cos(HV.tilt * Math.PI / 180);
 const roofY = x => HV.base + HV.sh + (HV.peak - HV.sh) * (1 - Math.abs(x) / HV.w);
-const hivePZ = () => -ui.dist - HALF;                        // world z of the red hive pivot
-const toHive = p => { const dy = p.y - HV.py, dz = p.z - hivePZ(); return {x: p.x, y: dy * HC - dz * HS, z: dy * HS + dz * HC}; };
-const fromHive = (x, y, z) => new THREE.Vector3(x, HV.py + z * HS + y * HC, hivePZ() + z * HC - y * HS);
+// Where the hive sits relative to the robot. The robot stays put and always shoots along -z (it turns to face the
+// opening), so the hive is placed and yawed around it: the front bumper is `dist` from the pivot, `bearing` degrees
+// off the hive's facing axis, and the middle of the opening lies on the robot's shot line.
+let HX = {tx: 0, tz: -60 - HALF, c: 1, s: 0, psi: 0, beta: 0};
+const AIM_LZ = HV.half * HC - (HV.base + 6) * HS;            // aim point, horizontal distance out from the pivot
+function hiveFrame() {
+  // bearing is measured at the opening: the bumper sits on a ray from the aim point, `bearing` off the hive's axis,
+  // at the point where it is `dist` from the pivot
+  const phi = rad(ui.bearing), D = ui.dist, a = AIM_LZ, ca = Math.cos(phi);
+  const L = -a * ca + Math.sqrt(Math.max(0, a * a * ca * ca - a * a + D * D));
+  const bx = L * Math.sin(phi), bz = a + L * ca;           // bumper, in the hive's flat frame
+  const psi = Math.PI - Math.atan2(-bx, AIM_LZ - bz), c = Math.cos(psi), s = Math.sin(psi);
+  HX = {tx: -(bx * c + bz * s), tz: -HALF - (-bx * s + bz * c), c, s, psi,
+        beta: Math.atan2(bx, bz - AIM_LZ) * 180 / Math.PI};  // shot direction vs the opening's facing axis
+}
+// hive-group (flat, untilted) coords <-> world
+const flatToWorld = (x, h, z) => new THREE.Vector3(x * HX.c + z * HX.s + HX.tx, h, -x * HX.s + z * HX.c + HX.tz);
+const toHive = p => {
+  const qx = p.x - HX.tx, qz = p.z - HX.tz, lx = qx * HX.c - qz * HX.s, lz = qx * HX.s + qz * HX.c, dy = p.y - HV.py;
+  return {x: lx, y: dy * HC - lz * HS, z: dy * HS + lz * HC};
+};
+const hiveLocal = (x, y, z) => new THREE.Vector3(x, HV.py + z * HS + y * HC, z * HC - y * HS);   // inside the hive group
+const fromHive = (x, y, z) => { const l = hiveLocal(x, y, z); return flatToWorld(l.x, l.y, l.z); };
 const inOpening = (x, y, r) => Math.abs(x) <= HV.w - r && y >= HV.base + r * 0.8 && y <= roofY(x) - r * 1.0;
 const AIM = () => fromHive(0, HV.base + 6, HV.half);         // middle of the upward opening
 const ballRc = (rev, type) => hoodR(rev, type) - BALL[type].r;   // stiff ball rides on the hood, the tread gives
@@ -375,7 +397,7 @@ const hRuler = new THREE.Group();
 hive.add(hRuler);
 function buildHeightRuler() {
   for (const c of [...hRuler.children]) { c.removeFromParent(); }
-  const zf = fromHive(0, HV.base, HV.half).z - hivePZ() + 8, x = -13;
+  const zf = hiveLocal(0, HV.base, HV.half).z + 8, x = -13;
   hRuler.add(rodMesh(new THREE.Vector3(x, 0, zf), new THREE.Vector3(x, 72, zf), 0.12, tickMat));
   for (let h = 6; h <= 72; h += 6) {
     const t = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, h % 12 ? 0.8 : 1.6), tickMat);
@@ -383,12 +405,18 @@ function buildHeightRuler() {
     if (h % 12 === 0) { const d = document.createElement("div"); d.className = "htick"; d.textContent = h + " in"; const l = new CSS2DObject(d); l.position.set(x, h, zf); hRuler.add(l); }
   }
   for (const [y, label] of [[HV.base, "53.5 in"], [HV.base + HV.peak, "65.6 in"]]) {
-    const p = fromHive(-HV.w, y, HV.half); p.z -= hivePZ();
+    const p = hiveLocal(-HV.w, y, HV.half);
     const d = document.createElement("div"); d.className = "rim"; d.textContent = label;
     const l = new CSS2DObject(d); l.position.copy(p); hRuler.add(l);
   }
 }
-function placeHive() { hive.position.z = hivePZ(); buildHeightRuler(); predictKey = ""; }
+function placeHive() {
+  hiveFrame();
+  hive.position.set(HX.tx, 0, HX.tz);
+  hive.rotation.y = HX.psi;
+  buildHeightRuler();
+  predictKey = ""; mathKey = "";
+}
 
 function applyTheme() {
   scene.background = new THREE.Color(css("--bg"));
@@ -526,7 +554,7 @@ function armAngle(k, lift) {
 }
 
 // ---------------------------------------------------------------- UI state
-const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, auto: true, mode: "3d"};
+const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, bearing: 0, auto: true, mode: "3d"};
 // exit speed (ft/s) that carries a ball of this type, launched at `angle`, through the middle of the opening
 function neededSpeed(type, angle) {
   const th = rad(180 - angle), rc = ballRc(ui.rev, type);
@@ -845,7 +873,7 @@ function shotParams() {
 }
 function predict() {
   const {live, type, angle, vel} = shotParams();
-  const key = [ui.rev, type, angle, vel, ui.dist, live ? "live" : "next"].join();
+  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, live ? "live" : "next"].join();
   if (key === predictKey) return;
   predictKey = key;
   const rc = ballRc(ui.rev, type), th = rad(180 - angle), r = BALL[type].r;
@@ -939,7 +967,7 @@ function shotView() {
   const box = new THREE.Box3().setFromPoints(predictPts.length ? predictPts : [T(0, 0)]);
   box.expandByPoint(T(-2, 0)).expandByPoint(T(18, 10));
   for (const t of trails) box.expandByObject(t.children[0]);
-  box.expandByPoint(new THREE.Vector3(0, 84, hivePZ() - 22)).expandByPoint(new THREE.Vector3(0, 0, hivePZ() + 22));
+  for (const x of [-26, 26]) for (const z of [-26, 26]) for (const h of [0, 84]) box.expandByPoint(flatToWorld(x, h, z));
   const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
   const vf = rad(camera.fov / 2), hf = Math.atan(Math.tan(vf) * camera.aspect);
   const d = Math.max(s.z / 2 / Math.tan(hf), s.y / 2 / Math.tan(vf)) * 1.15 + 10;
@@ -953,6 +981,12 @@ function cameraGoal() {
     const vf = rad(camera.fov / 2), hf = Math.atan(Math.tan(vf) * camera.aspect);
     const d = Math.max(17 / Math.tan(hf), 9 / Math.tan(vf)) + 6;
     return {pos: new THREE.Vector3(-d, 4.6 + d * 0.1, -4.5), tgt: VIEWS.mech.tgt};
+  }
+  if (mode === "top") {
+    const pv = flatToWorld(0, 0, 0), c = new THREE.Vector3((pv.x) / 2, 0, (pv.z + 8) / 2);
+    const span = Math.hypot(pv.x, pv.z) + 70, vf = rad(camera.fov / 2), hf = Math.atan(Math.tan(vf) * camera.aspect);
+    const d = Math.max(span / 2 / Math.tan(hf), span / 2 / Math.tan(vf));
+    return {pos: new THREE.Vector3(c.x - 0.01, d, c.z + 0.01), tgt: c};
   }
   return mode === "shot" ? shotView() : VIEWS[mode];
 }
@@ -1027,6 +1061,12 @@ autoBtn.addEventListener("click", () => {
 });
 const distIn = document.getElementById("dist"), distOut = document.getElementById("distOut");
 distIn.addEventListener("input", () => { ui.dist = +distIn.value * 12; distOut.textContent = distIn.value + " ft"; placeHive(); });
+const bearIn = document.getElementById("bearing"), bearOut = document.getElementById("bearingOut");
+bearIn.addEventListener("input", () => {
+  ui.bearing = +bearIn.value;
+  bearOut.textContent = ui.bearing === 0 ? "0° (head-on)" : Math.abs(ui.bearing) + "° " + (ui.bearing < 0 ? "left" : "right");
+  placeHive();
+});
 const rapidBtn = document.getElementById("rapid");
 rapidBtn.addEventListener("click", () => {
   ui.rapid = !ui.rapid;
@@ -1082,7 +1122,7 @@ const n1 = v => (+v).toFixed(1);
 function updateMath() {
   if (mathEl.hidden) return;
   const {live, type, angle, vel} = shotParams();
-  const key = [ui.rev, type, angle, vel, ui.dist, !!window.katex].join();
+  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, !!window.katex].join();
   if (key === mathKey) return;
   mathKey = key;
   const g = geom(type, angle), t = rad(angle), need = neededSpeed(type, angle), v = vel * 12;
@@ -1098,7 +1138,14 @@ function updateMath() {
     "<div class='vars'><span>x</span><span>" + n1(g.x) + " in · launch point to the middle of the opening</span>" +
     "<span>h<sub>bot</sub></span><span>" + n1(g.hb) + " in · where the ball leaves the hood</span>" +
     "<span>h<sub>goal</sub></span><span>" + n1(g.hg) + " in · middle of the opening (53.5–65.6)</span>" +
-    "<span>θ</span><span>" + angle + "° · launch angle</span><span>g</span><span>386 in/s²</span></div>" +
+    "<span>θ</span><span>" + angle + "° · launch angle</span><span>g</span><span>386 in/s²</span>" +
+    "<span>φ</span><span>" + Math.abs(HX.beta).toFixed(0) + "° · how far off the hive's axis the shot comes in" + (Math.abs(HX.beta) < 0.5 ? " (head-on)" : "") + "</span></div>" +
+    (Math.abs(HX.beta) >= 0.5 ? "<h3>Coming in at an angle</h3>" +
+      tex("w_{eff}=w\\cos\\varphi=20\\cos" + Math.abs(HX.beta).toFixed(0) + "^\\circ=" + n1(20 * Math.cos(rad(HX.beta))) + "\\ \\text{in}") +
+      "<p>The robot turns to face the opening, but from the side the 20 in opening looks narrower, and the ball crosses its slanted face at an angle. The x and v₀ below are measured along the shot line; the speed window is simulated in 3D.</p>" : "") +
+    "<h3>Aim tolerance (left / right)</h3>" +
+    tex("\\delta=\\arctan\\dfrac{\\tfrac{w}{2}\\cos\\varphi-r_{ball}}{x}=\\arctan\\dfrac{" + n1(10 * Math.cos(rad(HX.beta))) + "-" + n1(BALL[type].r) + "}{" + n1(g.x) + "}=\\pm" + n1(Math.atan(Math.max(0, 10 * Math.cos(rad(HX.beta)) - BALL[type].r) / g.x) * 180 / Math.PI) + "^\\circ") +
+    "<p>How far the robot's heading can be off and still go in. " + (Math.abs(HX.beta) >= 0.5 ? "Head-on it would be ±" + n1(Math.atan((10 - BALL[type].r) / g.x) * 180 / Math.PI) + "°; from this angle the opening looks narrower, so aim matters more." : "Shooting from the side shrinks this.") + "</p>" +
     "<h3>Launch speed needed</h3>" +
     tex("v_0=\\sqrt{\\dfrac{g\\,x^{2}}{2\\cos^{2}\\theta\\,\\bigl(x\\tan\\theta-(h_{goal}-h_{bot})\\bigr)}}") +
     (need == null ? "<p class='bad'>Too close: x·tanθ is smaller than h<sub>goal</sub> − h<sub>bot</sub>, so no speed reaches the opening at " + angle + "°.</p>" :
@@ -1140,11 +1187,15 @@ function ballXZ(b) {
 const toXZ = v => [v.z + HALF, v.y];
 function drawSchem(dt) {
   const W = schemSvg.clientWidth || 1, H = schemSvg.clientHeight || 1;
-  const mode = ui.view === "auto" ? S.camMode : ui.view === "mech" ? "mech" : "shot";
-  const tgt = mode === "mech" ? {x0: -8, x1: 25, z0: -2.8, z1: 12.8} : {x0: -ui.dist - 30, x1: W < 600 ? 40 : 32, z0: -10, z1: 84};
-  if (!sBox) sBox = {...tgt};
+  const mode = ui.view === "auto" ? S.camMode : ui.view === "mech" || ui.view === "top" ? ui.view : "shot";
+  const pv = flatToWorld(0, 0, 0), pvx = pv.z + HALF, pvl = -pv.x;      // pivot: robot x along the shot line, and lateral
+  const tgt = mode === "mech" ? {x0: -8, x1: 25, z0: -2.8, z1: 12.8}
+    : mode === "top" ? {x0: Math.min(-4, pvx - 34), x1: 22, z0: Math.min(-14, pvl - 34), z1: Math.max(14, pvl + 34)}
+    : {x0: pvx - 30, x1: W < 600 ? 40 : 32, z0: -10, z1: 84};
+  if (sBox && sBox.mode !== mode) sBox = null;
+  if (!sBox) sBox = {...tgt, mode};
   const kk = 1 - Math.exp(-dt * 6);
-  for (const q in tgt) sBox[q] += (tgt[q] - sBox[q]) * kk;
+  for (const q of ["x0", "x1", "z0", "z1"]) sBox[q] += (tgt[q] - sBox[q]) * kk;
   const bw = sBox.x1 - sBox.x0, bh = sBox.z1 - sBox.z0;
   schemSvg.setAttribute("viewBox", sBox.x0 + " " + (-sBox.z1) + " " + bw + " " + bh);
   const k = Math.max(bw / W, bh / H), fs = (W < 600 ? 11 : 12.5) * k, close = bw < 45;
@@ -1164,23 +1215,70 @@ function drawSchem(dt) {
   const arc = (cx, cz, r, t0, t1, n = 32) => { const pts = []; for (let i = 0; i <= n; i++) { const t = rad(t0 + (t1 - t0) * i / n); pts.push([cx + r * Math.sin(t), cz - r * Math.cos(t)]); } return pts; };
   const lab = (ax, az, lx, lz, str, anchor = "start") => { L(ax, az, lx, lz, "s-lead"); TX(lx + (anchor === "end" ? -0.25 : anchor === "start" ? 0.25 : 0), lz + (lz >= az ? 0.25 : -fs * 0.9), str, "", anchor); };
 
+  if (mode === "top") { drawTop(); schemG.innerHTML = o.join(""); return; }
+  function drawTop() {          // looking down: robot at right, shooting left; z here = -lateral
+    const T2 = v => [v.z + HALF, -v.x];
+    const fl = (x, z) => T2(flatToWorld(x, 0, z));
+    // field tiles
+    for (let g = -240; g <= 240; g += 24) { L(g + 6, -300, g + 6, 300, "s-faint", 'style="opacity:.18"'); L(-300, g, 300, g, "s-faint", 'style="opacity:.18"'); }
+    // hive frame footprint, blue hive, red cells, opening
+    const xc = HV.sep / 2;
+    PL([fl(xc - HV.fw / 2, -HV.fd / 2), fl(xc + HV.fw / 2, -HV.fd / 2), fl(xc + HV.fw / 2, HV.fd / 2), fl(xc - HV.fw / 2, HV.fd / 2)], "s-faint", true);
+    PL([fl(HV.sep - 10, -HV.half * HC), fl(HV.sep + 10, -HV.half * HC), fl(HV.sep + 10, HV.half * HC), fl(HV.sep - 10, HV.half * HC)], "s-cell", true, 'style="stroke:#2C55C8;fill:rgba(44,85,200,.08)"');
+    for (const [z0, z1] of [[HV.half - HV.depth, HV.half], [-HV.half, -HV.half + HV.depth]]) {
+      const c = [];
+      for (const [x, z] of [[-10, z0], [10, z0], [10, z1], [-10, z1]]) c.push(T2(fromHive(x, HV.base + 3, z)));
+      PL(c, "s-cell", true);
+    }
+    const o1 = T2(fromHive(-HV.w, HV.base + 6, HV.half)), o2 = T2(fromHive(HV.w, HV.base + 6, HV.half));
+    PL([o1, o2], "s-open");
+    const pc = T2(flatToWorld(0, 0, 0)), axisEnd = fl(0, 70), aim = T2(AIM());
+    C(pc[0], pc[1], 0.9, "s-part");
+    L(pc[0], pc[1], axisEnd[0], axisEnd[1], "s-faint", 'style="stroke-dasharray:4 4;opacity:.8"');
+    TX(axisEnd[0], axisEnd[1] + 1.2, "hive axis", "mut", "middle", 0.85);
+    TX(pc[0], pc[1] - fs * 1.6, "red hive", "red", "middle", 0.9);
+    // robot outline, facing the opening (always shoots along -x here)
+    PL([[0, -8.75], [17.5, -8.75], [17.5, 8.75], [0, 8.75]], "s-part", true);
+    PL([[10.6, -2.6], [17.5, -2.6], [17.5, 2.6], [10.6, 2.6]], "s-faint", true);
+    C(FW.x, 0, 0.6, "s-faint");
+    TX(8.75, -8.75 - fs * 1.3, "robot", "mut", "middle", 0.9);
+    // shot path from above, and the angle
+    for (const t of schTrails) PL(t.pts.map(([x]) => [x, 0]), "s-path", false, `style="stroke:${t.color};opacity:.4"`);
+    if (predictPts.length) PL(predictPts.map(T2), "s-path", false, `style="stroke:${BALL[shotParams().type].hex};stroke-dasharray:6 5"`);
+    for (const b of S.balls) if (b.state === "flight" || b.state === "scored" || b.state === "rest") { const q = T2(b.pos); C(q[0], q[1], b.r, "", `style="fill:${BALL[b.type].hex};stroke:var(--fg);stroke-width:1;vector-effect:non-scaling-stroke"`); }
+    C(aim[0], aim[1], 0.8, "", 'style="fill:var(--good)"');
+    const beta = HX.beta, ra = 14;
+    if (Math.abs(beta) >= 0.5) {
+      const axDir = Math.atan2(axisEnd[1] - aim[1], axisEnd[0] - aim[0]), shotDir = Math.atan2(0 - aim[1], 18 - aim[0]), pts = [];
+      let d = shotDir - axDir; d = Math.atan2(Math.sin(d), Math.cos(d));
+      for (let i = 0; i <= 24; i++) { const a = axDir + d * i / 24; pts.push([aim[0] + ra * Math.cos(a), aim[1] + ra * Math.sin(a)]); }
+      PL(pts, "s-dim");
+      const am = axDir + d / 2;
+      TX(aim[0] + (ra + 3) * Math.cos(am), aim[1] + (ra + 3) * Math.sin(am), "φ = " + Math.abs(beta).toFixed(0) + "°", "acc", "middle");
+    } else TX(aim[0] + 4, aim[1] + 2, "head-on", "acc", "start", 0.9);
+    // distance bumper -> pivot
+    ARW(0, 0, pc[0], pc[1], "var(--muted)", true);
+    TX((pc[0]) / 2, pc[1] / 2 - fs * 1.1, "D = " + (ui.dist / 12).toFixed(2).replace(/\.?0+$/, "") + " ft", "mut", "middle", 0.9);
+    TX(sBox.x0 + 0.8, sBox.z1 - fs * 1.4, "Top view · opening looks " + n1(20 * Math.cos(rad(beta))) + " in wide from here", "mut", "start", 0.95);
+  }
+
   // floor and distance ticks
   L(sBox.x0 - 20, 0, sBox.x1 + 20, 0, "s-floor");
   if (!close) for (let ft = 0; ft <= 14; ft++) { const x = -12 * ft; L(x, 0, x, -(ft % 2 ? 1 : 2), "s-faint"); if (ft % 2 === 0) TX(x, -2 - fs * 1.1, ft + " ft", "mut", "middle", 0.85); }
   // ---- hive (red, upward cell facing the robot)
   const hv = (x, y, z) => toXZ(fromHive(x, y, z));
-  const px = -ui.dist;
-  L(px - HV.fd / 2, 0, px, HV.py + 1, "s-faint"); L(px + HV.fd / 2, 0, px, HV.py + 1, "s-faint");
+  const top = toXZ(flatToWorld(0, HV.py + 1, 0));
+  for (const z of [-HV.fd / 2, HV.fd / 2]) { const f = toXZ(flatToWorld(0, 0, z)); L(f[0], f[1], top[0], top[1], "s-faint"); }
   for (const z0 of [HV.half - HV.depth, -HV.half]) PL([hv(0, HV.base, z0), hv(0, HV.base + HV.peak, z0), hv(0, HV.base + HV.peak, z0 + HV.depth), hv(0, HV.base, z0 + HV.depth)], "s-cell", true);
   PL([hv(0, HV.base - 0.9, -HV.half), hv(0, HV.base - 0.9, HV.half)], "s-line");
-  C(px, HV.py, 0.8, "s-part");
+  C(pvx, HV.py, 0.8, "s-part");
   const ob = hv(0, HV.base, HV.half), ot = hv(0, HV.base + HV.peak, HV.half);
   PL([ob, ot], "s-open");
   if (!close) {
     TX(ob[0] + 1.2, ob[1] - 0.5, "53.5 in", "red", "start", 0.95);
     TX(ot[0] + 1.2, ot[1] + 0.3, "65.6 in", "red", "start", 0.95);
     TX(ot[0] - 2, ot[1] + 2.2 + fs, "upward cell", "grn", "end", 0.9);
-    TX(px, HV.py + 2.2, "pivot 43.95 in", "mut", "middle", 0.85);
+    TX(pvx, HV.py + 2.2, "pivot 43.95 in", "mut", "middle", 0.85);
   }
   // ---- robot body
   for (const wx of [2.75, 14.75]) C(wx, 2.045, 2.045, "s-faint");
