@@ -269,7 +269,18 @@ const approach = (v, t, d) => v < t ? Math.min(t, v + d) : Math.max(t, v - d);
 const rad = d => d * Math.PI / 180;
 const LIMIT = 4;           // possession limit: a 5th ball is a penalty
 // flywheel speed lost per shot (fraction), and recovery per second of animation time. Estimates, not measured.
-const FW_DROP = {A: {pollen: 0.05, nectar: 0.14}, B: {pollen: 0.05, nectar: 0.06}}, FW_RECOVER = 0.08;
+// Flywheel model (best guesses where goBILDA doesn't publish a number):
+//   2x goBILDA Hogback 96 mm 50A (82 g, ~1100 g·cm² each, estimated) + goBILDA 82 mm steel flywheel (1651 g·cm², listed)
+//   goBILDA 5203 6000 rpm at 1:1: stall torque 1.47 kg·cm = 0.144 N·m. Slip: ball leaves at 90% of the no-slip speed.
+//   Each shot draws about twice the ball's energy (friction slip loses as much as the ball gains).
+const FLY = {d: 0.096, I: (2 * 1100 + 1651) * 1e-7, eta: 0.9, tauStall: 0.144, wFree: 6000 * Math.PI / 30, mu: 0.7, E: 2.5e6, margin: 2};
+const flyOmega = vft => 2 * vft * 0.3048 / (FLY.eta * FLY.d / 2);              // rad/s for a ball exit speed (ft/s)
+const ballKE = (type, vft) => 5 / 6 * BALL[type].m * (vft * 0.3048) ** 2;      // hollow ball: translation + spin
+function shotDip(type, vft) {                                                  // fraction of wheel speed lost per shot
+  const w = flyOmega(vft), KEfw = 0.5 * FLY.I * w * w, Ed = 2 * ballKE(type, vft);
+  return 1 - Math.sqrt(Math.max(0, 1 - Ed / KEfw));
+}
+const FW_RECOVER = 0.08;
 const SCEN = {
   pollen: [["pollen", 0], ["pollen", 1.0], ["pollen", 2.0], ["pollen", 3.0]],
   nectar: [["nectar", 0], ["nectar", 1.3], ["nectar", 2.6]],
@@ -601,7 +612,7 @@ function neededSpeedNoDrag(type, angle) {
   return den > 0 ? Math.sqrt(G * L * L / den) / 12 : null;
 }
 const shotSpeed = (type, angle) => ui.auto ? Math.min(40, neededSpeed(type, angle) ?? 40) : ui.vel;
-const rpmOf = v => Math.round(v * 12 * 2 * 60 / (Math.PI * 4) / 10) * 10;   // no-slip: wheel surface = 2x ball speed
+const rpmOf = v => Math.round(flyOmega(v) * 30 / Math.PI / 10) * 10;   // ball centre = half the tread speed, 90% for slip
 let R = null, S = null, ready = false;
 const noteEl = document.getElementById("note"), statsEl = document.getElementById("stats"), slowEl = document.getElementById("slowmo");
 const stepEls = [...document.querySelectorAll("#steps li")];
@@ -767,7 +778,8 @@ function capture(b) {
   b.exitT = 180 - b.angle;
   b.exitV = +(shotSpeed(b.type, b.angle) * S.fwSpeed).toFixed(1);   // leaves at whatever speed the wheel has right now
   S.shotsFired++;
-  S.fwSpeed -= FW_DROP[ui.rev][b.type];
+  // Rev A nectar is squeezed 1.1 in, so it loses extra energy to the tread (rough 1.6x)
+  S.fwSpeed -= shotDip(b.type, b.exitV) * (ui.rev === "A" && b.type === "nectar" ? 1.6 : 1);
   const more = S.balls.some(o => o.state === "roll" && o.type === b.type);
   if (!ui.rapid || !more) S.gateTarget = 0;
   S.cooldown = 0.8;
@@ -1208,7 +1220,7 @@ function updateMath() {
                                  : "At " + vel + " ft/s.") +
     " Result: <span class='" + (inside ? "ok'>goes in" : "bad'>misses") + "</span> (opening 53.5–65.6 in, less the ball radius).</p>" +
     "<h3>Speed window</h3>" +
-    (win ? "<p>Goes in from <b>" + n1(win[0]) + " to " + n1(win[1]) + " ft/s</b>, so ±" + ((win[1] - win[0]) / 2).toFixed(2) + " ft/s, or about ±" + Math.round((win[1] - win[0]) / 2 * 114.6) + " rpm at the flywheel. Simulated through the tilted opening.</p>"
+    (win ? "<p>Goes in from <b>" + n1(win[0]) + " to " + n1(win[1]) + " ft/s</b>, so ±" + ((win[1] - win[0]) / 2).toFixed(2) + " ft/s, or about ±" + Math.round((rpmOf(win[1]) - rpmOf(win[0])) / 2) + " rpm at the flywheel. Simulated through the tilted opening.</p>"
          : "<p class='bad'>No speed puts it in from here at " + angle + "°.</p>") +
     "<h3>Peak height</h3>" +
     tex("h_{max}=h_{bot}+\\dfrac{(v_0\\sin\\theta)^{2}}{2g}=" + n1(g.hb) + "+\\dfrac{(" + Math.round(v) + "\\sin" + angle + "^\\circ)^{2}}{2\\cdot386}=" + n1(peak) + "\\ \\text{in}") +
@@ -1217,10 +1229,45 @@ function updateMath() {
     tex("x_{min}=\\dfrac{h_{goal}-h_{bot}}{\\tan\\theta}=\\dfrac{" + n1(g.dh) + "}{\\tan" + angle + "^\\circ}=" + n1(xmin) + "\\ \\text{in}") +
     "<p>About " + dmin.toFixed(1) + " ft from the front bumper to the hive pivot. Closer than that, the ball can't climb to the opening at " + angle + "°.</p>" +
     "<h3>Flywheel speed</h3>" +
-    tex("\\text{rpm}=\\dfrac{2v_0}{\\pi d_w}\\cdot60=\\dfrac{2(" + Math.round(v) + ")}{\\pi(4)}\\cdot60\\approx" + rpm.toLocaleString()) +
-    "<p>The ball rolls between the spinning tread and the still hood, so its centre moves at half the tread speed. No-slip estimate, so the real rpm will be higher. That's " + Math.round(rpm / 60) + "% of the 6000 rpm motor.</p>" +
+    tex("\\text{rpm}=\\dfrac{2v_0}{\\eta\\,\\pi d_w}\\cdot60=\\dfrac{2(" + Math.round(v) + ")}{0.9\\,\\pi(3.78)}\\cdot60\\approx" + rpm.toLocaleString()) +
+    "<p>Flywheel: two goBILDA Hogback 96 mm (3.78 in) wheels. The ball rolls between the spinning tread and the still hood, so its centre moves at half the tread speed; η = 0.9 allows for slip (a guess, calibrate it). That's " + Math.round(rpm / 60) + "% of the 6000 rpm motor.</p>" +
+    flyHTML(type, vel) +
     "<h3>Hood squeeze</h3>" +
-    tex("s=d_{ball}-\\text{gap}=" + n1(d) + "-" + n1(gap) + "=" + n1(sq) + "\\ \\text{in}");
+    tex("s=d_{ball}-\\text{gap}=" + n1(d) + "-" + n1(gap) + "=" + n1(sq) + "\\ \\text{in}") +
+    gripHTML(type, vel, sq);
+}
+// energy each shot takes out of the flywheel, and how long the motor needs to put it back
+function flyHTML(type, vel) {
+  const w = flyOmega(vel), KEfw = 0.5 * FLY.I * w * w, row = t => {
+    const Eb = ballKE(t, vel), dip = shotDip(t, vel), tau = FLY.tauStall * (1 - w / FLY.wFree), trec = FLY.I * dip * w / tau;
+    return {Eb, dip, trec};
+  }, P = row("pollen"), N = row("nectar"), c = type === "pollen" ? P : N;
+  return "<h3>Flywheel energy per shot</h3>" +
+    tex("E_{ball}=\\tfrac56 m v_0^{2},\\qquad E_{fw}=\\tfrac12 I\\omega^{2},\\qquad \\dfrac{\\Delta\\omega}{\\omega}=1-\\sqrt{1-\\dfrac{2E_{ball}}{E_{fw}}}") +
+    tex("I=2(1100)+1651=3851\\ \\text{g}\\cdot\\text{cm}^{2}") +
+    tex("E_{fw}=\\tfrac12(3.85\\times10^{-4})(" + Math.round(w) + ")^{2}=" + KEfw.toFixed(1) + "\\ \\text{J}") +
+    "<p>The ball is hollow, so it carries ⅚mv² (moving plus spinning). Slip wastes about as much again, so each shot draws ~2E<sub>ball</sub>. Added inertia from the goBILDA 82 mm steel flywheel (1651 g·cm²) on the shooter shaft; the Hogback's 1100 g·cm² each is my estimate.</p>" +
+    "<div class='vars' style='grid-template-columns:auto auto auto auto'><span></span><span>energy</span><span>wheel dip</span><span>recovery*</span>" +
+    "<span>pollen</span><span>" + P.Eb.toFixed(2) + " J</span><span>" + (P.dip * 100).toFixed(1) + "%</span><span>" + Math.round(P.trec * 1000) + " ms</span>" +
+    "<span>nectar</span><span>" + N.Eb.toFixed(2) + " J</span><span>" + (N.dip * 100).toFixed(1) + "%</span><span>" + Math.round(N.trec * 1000) + " ms</span></div>" +
+    "<p>*Full motor power, τ = τ<sub>stall</sub>(1 − ω/ω<sub>free</sub>) with the 5203's 0.144 N·m stall torque. Nectar is 66% heavier, so it pulls the wheel down 66% harder and takes 66% longer to recover. Rapid fire: space shots at least ~" + Math.round(Math.max(P.trec, N.trec) * 1000 / 10) * 10 + " ms apart or the next ball leaves slow.</p>";
+}
+// how hard the tread has to press to get the ball up to speed, and how much compression that takes
+function gripHTML(type, vel, sqNow) {
+  const L = 3.0 * 0.0254 * rad(134), row = t => {
+    const Ft = FLY.margin * ballKE(t, vel) / L, N = Ft / FLY.mu, rb = BALL[t].r * 0.0254, Rw = FLY.d / 2;
+    const Re = 1 / Math.sqrt((1 / rb + 1 / Rw) / rb), Es = FLY.E / 0.75, dl = (3 * N / (4 * Es * Math.sqrt(Re))) ** (2 / 3);
+    return {Ft, N, dl};
+  }, P = row("pollen"), Nn = row("nectar"), c = type === "pollen" ? P : Nn;
+  return "<h3>Grip and compression needed</h3>" +
+    tex("F_t=k\\,\\dfrac{E_{ball}}{L},\\qquad N=\\dfrac{F_t}{\\mu},\\qquad \\delta=\\left(\\dfrac{3N}{4E^{*}\\sqrt{R_e}}\\right)^{2/3}") +
+    tex("N_{" + type + "}=\\dfrac{2(" + ballKE(type, vel).toFixed(2) + ")}{" + L.toFixed(3) + "\\cdot0.7}=" + c.N.toFixed(1) + "\\ \\text{N}=" + (c.N / 4.448).toFixed(1) + "\\ \\text{lbf}") +
+    "<p>The tread must get the ball up to speed within the ~7 in wrap (L), with a 2× margin (k) so it's at speed well before the exit. μ ≈ 0.7 for silicone rubber on polyethylene. δ is the tread compression from Hertz contact, 50A rubber (E ≈ 2.5 MPa), treating the ball as rigid.</p>" +
+    "<div class='vars' style='grid-template-columns:auto auto auto'><span></span><span>press force</span><span>tread compression</span>" +
+    "<span>pollen</span><span>" + P.N.toFixed(1) + " N (" + (P.N / 4.448).toFixed(1) + " lbf)</span><span>" + (P.dl * 1000).toFixed(1) + " mm (" + (P.dl / 0.0254).toFixed(3) + " in)</span>" +
+    "<span>nectar</span><span>" + Nn.N.toFixed(1) + " N (" + (Nn.N / 4.448).toFixed(1) + " lbf)</span><span>" + (Nn.dl * 1000).toFixed(1) + " mm (" + (Nn.dl / 0.0254).toFixed(3) + " in)</span></div>" +
+    "<p class='bad'>The hood here squeezes " + n1(sqNow) + " in (" + Math.round(sqNow * 25.4) + " mm). With stiff balls on a 50A tread that's far more than the ~1 mm needed: it would take well over 100 lbf, so the ball, hood or shaft gives instead and the shot speed becomes erratic.</p>" +
+    "<p>Nectar needs ~1.66× the press force of pollen (it's 1.66× heavier) but only ~1.3× the compression, because its bigger curve spreads the contact. Real total squeeze will be a bit more than δ since the hollow shell flexes too, so start around 1–3 mm (0.04–0.12 in) and tune. Because that's about the size of the balls' own size variation, a <b>spring-loaded hood</b> that sets the force (≈3 lbf pollen, ≈5 lbf nectar) will be far more consistent than a fixed gap.</p>";
 }
 
 // ---------------------------------------------------------------- schematic: labelled side view drawn from the same simulation
