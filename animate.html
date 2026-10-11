@@ -45,6 +45,10 @@ main.schem .labels{display:none}
 .ovl>*{pointer-events:auto}
 .slowmo{font-size:11px;color:var(--lip);font-weight:700;letter-spacing:.05em;background:var(--panel);border:1px solid var(--rule);border-radius:999px;padding:2px 9px}
 .slowmo[hidden]{display:none}
+.rpmchip{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;background:var(--panel);border:1px solid var(--rule);border-radius:999px;padding:2px 9px;color:var(--fg)}
+.rpmchip.low{color:var(--nectar);border-color:var(--nectar)}
+.log{margin-top:14px;font-size:13px;font-variant-numeric:tabular-nums;display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:2px 10px}
+.log b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .ovl .seg button{padding:5px 10px;font-size:13px}
 .fab{position:absolute;right:12px;bottom:12px;display:flex;gap:8px}
 .fab button{width:40px;height:40px;border-radius:50%;border:1px solid var(--rule);background:var(--panel);color:var(--fg);font-size:15px;cursor:pointer;display:grid;place-items:center}
@@ -139,7 +143,7 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
   <div id="stage"></div>
   <svg id="schem" role="img" aria-label="Side-view schematic of the robot, the shot and the hive" preserveAspectRatio="xMidYMid meet"><g id="schemG"></g></svg>
   <div class="ovl">
-    <div class="slowmo" id="slowmo" hidden>SLOW MOTION</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><div class="slowmo" id="slowmo" hidden>SLOW MOTION</div><div class="rpmchip" id="rpmchip"></div></div>
     <span class="seg" id="mode" style="margin-left:auto">
       <button type="button" data-v="3d" aria-pressed="true">3D</button>
       <button type="button" data-v="schem" aria-pressed="false">Schematic</button></span>
@@ -162,6 +166,11 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
   <label class="slider"><span class="label">Air drag C<sub style="text-transform:none">d</sub></span><input type="range" id="cd" min="0" max="0.8" step="0.05" value="0.5"><output id="cdOut">0.50</output></label>
   <label class="slider"><span class="label">Launch angle</span><input type="range" id="angle" min="45" max="75" step="1" value="60"><output id="angleOut">60°</output></label>
   <button type="button" class="btn" id="rapid" aria-pressed="false">Rapid fire</button>
+  <div><span class="label">Rapid-fire fix</span><span class="seg" id="comp">
+    <button type="button" data-v="none" aria-pressed="false">None</button>
+    <button type="button" data-v="hood" aria-pressed="true">Tilt hood</button>
+    <button type="button" data-v="high" aria-pressed="false">Aim high</button>
+    <button type="button" data-v="wait" aria-pressed="false">Wait for rpm</button></span></div>
   <button type="button" class="btn" id="sweep" aria-pressed="false">Sweep 45–75°</button>
   <button type="button" class="btn" id="clear">Clear paths</button>
   <button type="button" class="btn" id="cut" aria-pressed="true">Cutaway</button>
@@ -195,7 +204,7 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
     </details>
   </div>
   <div class="tabpanel eq" id="math" role="tabpanel" hidden></div>
-  <div class="tabpanel" id="data" role="tabpanel" hidden><div class="stats" id="stats"></div></div>
+  <div class="tabpanel" id="data" role="tabpanel" hidden><div class="stats" id="stats"></div><div class="log" id="shotlog"></div></div>
   <div class="tabpanel" id="ctl" role="tabpanel" hidden></div>
 </aside>
 </div>
@@ -284,6 +293,11 @@ function shotDip(type, vft) {                                                  /
   return 1 - Math.sqrt(Math.max(0, 1 - Ed / KEfw));
 }
 const FW_RECOVER = 0.08;
+// Real rapid-fire timing: the rollers push the queue into the flywheel back to back. Ball centres move at about
+// half the roller surface speed (1150 rpm on 2 in rollers = 120 in/s), so balls arrive one ball-length apart.
+const feedGap = type => (2 * BALL[type].r + 0.08) / 60;                        // s between balls (~50 ms pollen)
+const recoverRate = vft => { const w = flyOmega(vft); return FLY.tauStall * (1 - w / FLY.wFree) / (FLY.I * w); };   // fraction of speed per s, full power
+const netRapidDrop = (type, vft) => Math.max(0, shotDip(type, vft) - recoverRate(vft) * feedGap(type));
 const SCEN = {
   pollen: [["pollen", 0], ["pollen", 1.0], ["pollen", 2.0], ["pollen", 3.0]],
   nectar: [["nectar", 0], ["nectar", 1.3], ["nectar", 2.6]],
@@ -574,7 +588,7 @@ function armAngle(k, lift) {
 }
 
 // ---------------------------------------------------------------- UI state
-const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, bearing: 0, auto: true, cd: 0.5, mode: "3d"};
+const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, comp: "hood", dist: 60, bearing: 0, auto: true, cd: 0.5, mode: "3d"};
 // exit speed (ft/s) that carries a ball of this type, launched at `angle`, through the middle of the opening
 // air drag: a = k |v| v with k = rho Cd A / (2 m), converted to inches (holed balls: Cd is an estimate, calibrate it)
 const dragK = type => ui.cd * 0.5 * 1.204 * Math.PI * (BALL[type].r * 0.0254) ** 2 / BALL[type].m * 0.0254;
@@ -596,6 +610,34 @@ function heightAtAim(type, angle, vel) {
     if (p.y < 0) return -1e9;
   }
   return -1e9;
+}
+// hood angle (45-75 deg) that puts a ball leaving at `vel` ft/s through the middle of the opening. Height at the aim
+// plane rises with angle up to a peak and then falls; take the crossing nearest the nominal angle.
+function solveAngle(type, vel, near) {
+  const goal = AIM().y, f = a => heightAtAim(type, a, vel) - goal;
+  let best = null, prev = f(45);
+  for (let a = 45.5; a <= 75; a += 0.5) {
+    const cur = f(a);
+    if ((prev < 0) !== (cur < 0)) {
+      let lo = a - 0.5, hi = a, flo = prev;
+      for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2, fm = f(m); if ((fm < 0) === (flo < 0)) { lo = m; flo = fm; } else hi = m; }
+      const root = (lo + hi) / 2;
+      if (best == null || Math.abs(root - near) < Math.abs(best - near)) best = root;
+    }
+    prev = cur;
+  }
+  return best;
+}
+function maxHeightAngle(type, vel) {
+  let best = [60, -1e9];
+  for (let a = 45; a <= 75; a += 0.5) { const h = heightAtAim(type, a, vel); if (h > best[1]) best = [a, h]; }
+  return best[0];
+}
+const winCache = new Map();
+function windowFor(type, angle) {
+  const key = [ui.rev, type, angle, ui.dist, ui.bearing, ui.cd].join();
+  if (!winCache.has(key)) { if (winCache.size > 100) winCache.clear(); winCache.set(key, speedWindow(type, angle, neededSpeed(type, angle))); }
+  return winCache.get(key);
 }
 // with drag there is no closed form, so bisect on the speed (height at the aim plane rises with speed)
 function neededSpeed(type, angle) {
@@ -653,7 +695,7 @@ function resetSim() {
   S = {t: 0, phase: "intake", balls: [], spawn: SCEN[ui.sc].map(([type, at]) => ({type, at})),
        lift: [0, 0, 0], lid: 0, gate: 0, gateTarget: 0, bandR: hoodR(ui.rev, first), bandTarget: hoodR(ui.rev, first),
        lip: ui.sweep ? SWEEP[ui.shots % SWEEP.length] : ui.angle, lipTarget: ui.sweep ? SWEEP[ui.shots % SWEEP.length] : ui.angle,
-       rollerAng: 0, fwAng: 0, fw: 0, fwSpeed: 1, scored: 0, shotsFired: 0, last: null, intakeOn: true, cooldown: 0, stillT: 0, slowT: 0, doneT: 0, said: {}, camMode: "mech"};
+       rollerAng: 0, fwAng: 0, fw: 0, fwSpeed: 1, scored: 0, shotsFired: 0, last: null, log: [], intakeOn: true, cooldown: 0, stillT: 0, slowT: 0, doneT: 0, said: {}, camMode: "mech"};
   narrate("<b>Intake.</b> The robot drives onto the " + (ui.sc === "nectar" ? "nectar" : "pollen") +
           ". The compliant rollers grab each ball and roll it up the entry lip onto the two rails." +
           (ui.sc === "five" ? " Five balls are in its path, but it may only hold " + LIMIT + "." : ""), "intake");
@@ -746,7 +788,10 @@ function step(dt) {
       if (after.y < HV.base && after.y > HV.base - 4) {        // clipped the bottom of the cell: bounces back out
         b.vel.z = Math.abs(b.vel.z) * 0.3; b.vel.y *= 0.4;
         finish(b, "rim");
-      } else { b.passed = true; b.miss = after.y >= HV.base ? "over" : "under"; }
+      } else if (after.y >= HV.base && after.y < HV.base + b.r) {   // clipped the bottom edge of the opening
+        b.vel.z = Math.abs(b.vel.z) * 0.3; b.vel.y *= 0.4;
+        finish(b, "rim");
+      } else { b.passed = true; b.miss = after.y >= HV.base ? (Math.abs(after.x) > HV.w - b.r ? "wide" : "over") : "under"; }
     }
     if (b.pos.y <= b.r) {
       b.pos.y = b.r;
@@ -761,7 +806,8 @@ function step(dt) {
     b.spin += dt * 2;
   }
   if (S.intakeOn) S.rollerAng -= 2 * V_IN * dt / ROLLER_R;
-  S.fwSpeed = approach(S.fwSpeed, 1, FW_RECOVER * dt);
+  // recovery on the animation clock (between normal shots, and while waiting for rpm); rapid fire uses real feed timing
+  if (!ui.rapid || ui.comp === "wait" || !S.balls.some(b => b.state === "roll")) S.fwSpeed = approach(S.fwSpeed, 1, FW_RECOVER * dt);
   S.fw = approach(S.fw, S.phase === "fire" || S.balls.some(b => b.state === "hood") ? 1 : 0, dt / 0.8);
   S.fwAng -= S.fw * S.fwSpeed * rad(HOOD_DEG_S) * 3.25 * dt / 1.0;
 }
@@ -779,15 +825,30 @@ function capture(b) {
   b.R = ui.rev === "A" ? 4.5 : S.bandR;
   b.rc = b.R - b.r;
   b.sq = Math.max(0, 2 * b.r - (b.R - fwR()));
-  b.angle = S.lip;
+  if (ui.rapid && ui.comp !== "wait" && S.shotsFired > 0) S.fwSpeed = Math.min(1, S.fwSpeed + recoverRate(shotSpeed(b.type, ui.angle)) * feedGap(b.type));
+  b.angle = ui.rapid && ui.comp === "hood" ? ui.angle : S.lip;
+  b.target = shotSpeed(b.type, b.angle);
+  if (ui.rapid && ui.comp === "high" && ui.auto) {    // first ball near the top of the window, later (slower) ones step down through it
+    const w = windowFor(b.type, b.angle);
+    if (w) b.target = w[1] - 0.15;
+  }
+  b.fw = S.fwSpeed;
+  b.exitV = +(b.target * S.fwSpeed).toFixed(1);   // leaves at whatever speed the wheel has right now
+  b.comp = "";
+  if (ui.rapid && ui.comp === "hood" && S.fwSpeed < 0.995) {   // slower ball: tilt the hood exit so it still reaches the opening
+    let a = solveAngle(b.type, b.exitV, b.angle), best = false;
+    if (a == null) { a = maxHeightAngle(b.type, b.exitV); best = true; }   // can't reach the middle: take the angle that climbs highest
+    b.comp = (a - b.angle).toFixed(1); b.best = best;
+    b.angle = +a.toFixed(1); S.lip = S.lipTarget = b.angle;
+  }
   b.exitT = 180 - b.angle;
-  b.exitV = +(shotSpeed(b.type, b.angle) * S.fwSpeed).toFixed(1);   // leaves at whatever speed the wheel has right now
   S.shotsFired++;
+  S.log.push({n: S.shotsFired, b, rpm: rpmOf(b.target) * b.fw, res: "…"});
   // Rev A nectar is squeezed 1.1 in, so it loses extra energy to the tread (rough 1.6x)
   S.fwSpeed -= shotDip(b.type, b.exitV) * (ui.rev === "A" && b.type === "nectar" ? 1.6 : 1);
   const more = S.balls.some(o => o.state === "roll" && o.type === b.type);
-  if (!ui.rapid || !more) S.gateTarget = 0;
-  S.cooldown = 0.8;
+  if (!ui.rapid || !more || ui.comp === "wait") S.gateTarget = 0;
+  S.cooldown = ui.rapid ? 0.1 : 0.8;
   ui.shots++;
   const hard = ui.rev === "A" && b.type === "nectar";
   if (hard) narrate("<b>Rev A: 1.1 in of squeeze on a stiff nectar.</b> The ball won't give, so the soft 35A flywheel tread has to flatten 1.1 in, over half its 2 in radius (that's the overlap you see). " +
@@ -812,6 +873,11 @@ function launch(b) {
   if (!ui.rapid || !S.said.launch) narrate("<b>Launch.</b> The ball leaves where the hood ends, " + Math.round(b.exitT) + "° round the wrap, so it flies off at <b>" +
           Math.round(b.angle) + "°</b> and " + b.exitV + " ft/s (flywheel ≈ " + rpmOf(b.exitV).toLocaleString() + " rpm), back over the top of the robot toward the hive.", "flight");
   S.said.launch = true;
+  if (ui.rapid && b.best) narrate("<b>Shot " + S.shotsFired + ": the hood can't make up for it.</b> The flywheel is at " + Math.round(b.fw * 100) + "%, so the ball leaves at " + b.exitV +
+    " ft/s. No angle carries that to the middle of the opening; " + b.angle + "° climbs highest, but it may still drop low. Use Wait for rpm or Aim high.", "flight", true);
+  else if (ui.rapid && b.comp && b.comp !== "none" && +b.comp !== 0) narrate("<b>Shot " + S.shotsFired + ": hood tilts " + (b.comp > 0 ? "+" : "") + b.comp + "°.</b> The flywheel is at " + Math.round(b.fw * 100) + "% (" +
+    Math.round(rpmOf(b.target) * b.fw).toLocaleString() + " rpm), so the ball leaves at " + b.exitV + " ft/s instead of " + b.target.toFixed(1) + ". Launching at " + b.angle + "° instead of the nominal angle still carries it to the middle of the opening.", "flight");
+  else if (false) narrate("<b>Shot " + S.shotsFired + ": too slow to fix with the hood.</b> At " + b.exitV + " ft/s no angle between 45° and 75° reaches the opening. Wait for rpm instead.", "flight", true);
 }
 function score(b) {
   b.state = "scored"; b.t = 0; b.from = b.pos.clone();
@@ -820,7 +886,7 @@ function score(b) {
   finish(b, "in");
 }
 const trails = [], schTrails = [];
-const OUTCOME = {in: "IN", rim: "off the rim", over: "over the top", under: "under the cell", short: "short"};
+const OUTCOME = {in: "IN", rim: "off the rim", over: "over the top", under: "under the cell", short: "short", wide: "wide"};
 function finish(b, kind) {
   b.landed = true;
   const pts = b.trail.concat([b.pos.clone()]);
@@ -843,6 +909,7 @@ function finish(b, kind) {
   while (trails.length > 6) { const o = trails.shift(); o.traverse(c => c.geometry && c.geometry.dispose()); scene.remove(o); o.children[1].removeFromParent(); }
   trails.forEach((t, i) => t.children[0].material.opacity = 0.35 + 0.6 * (i + 1) / trails.length);
   S.last = OUTCOME[kind] + hTxt;
+  const entry = S.log.find(e => e.b === b); if (entry) entry.res = OUTCOME[kind] + hTxt;
   if (ui.rapid) { if (!S.balls.some(o => o.state === "roll" || o.state === "hood" || (o.state === "flight" && !o.landed)))
     narrate("<b>Rapid fire done: " + S.scored + " in.</b> Each shot pulls the flywheel down a little and it hasn't fully recovered before the next ball, so later balls leave slower and drop lower at the hive. " +
             "Velocity PID on the motor and a heavier flywheel keep them all in the opening. (Speed dip per shot is an estimate.)", "flight", S.scored < S.shotsFired); return; }
@@ -851,6 +918,7 @@ function finish(b, kind) {
     in: "<b>In!</b> It reached the hive at " + b.atHive.toFixed(1) + " in, inside the 53.5–65.6 in opening (peak " + peak + " in).",
     rim: "<b>Off the rim.</b> It reached the hive at " + b.atHive.toFixed(1) + " in, just under the 53.5 in bottom of the opening, and bounced out. Needs a little more speed.",
     over: "<b>Over the top.</b> It passed the hive at " + b.atHive.toFixed(1) + " in, above the 65.6 in top of the opening. Needs a little less speed.",
+    wide: "<b>Wide.</b> It reached the hive at " + (b.atHive ?? 0).toFixed(1) + " in but missed the side of the opening. Coming in at an angle leaves less room side to side.",
     under: "<b>Under the hive.</b> It passed the opening at only " + b.atHive.toFixed(1) + " in (needs 53.5–65.6). Much more speed needed.",
     short: "<b>Short.</b> It peaked at " + peak + " in and came down before the hive. The opening starts at 53.5 in, so it needs more speed (or move closer)."
   }[kind];
@@ -889,7 +957,7 @@ function director(dt) {
   if (S.phase !== "fire") return;
   const f = frontBall();
   const inAir = S.balls.some(b => b.state === "hood" || (b.state === "flight" && !b.landed));
-  const busy = ui.rapid ? S.balls.some(b => b.state === "hood") : inAir;
+  const busy = ui.rapid ? S.balls.some(b => b.state === "hood") || (ui.comp === "wait" && S.fwSpeed < 0.98) : inAir;
   if (!f && !inAir) { S.phase = "done"; S.doneT = 0; return; }
   if (f && S.gateTarget === 0 && !busy) {
     S.cooldown -= dt;
@@ -999,6 +1067,14 @@ function applyState() {
     S.balls.some(b => b.state === "hood") ? "SLOW MOTION · hood about 1/25 speed" : "SLOW MOTION · flight 0.45×";
   if (ui.auto && S.nextVel != null && +velIn.value !== S.nextVel) { velIn.value = S.nextVel; velOut.textContent = S.nextVel + " ft/s"; }
   if (ui.sweep && +angleIn.value !== S.lipTarget) { angleIn.value = S.lipTarget; angleOut.textContent = S.lipTarget + "°"; }
+  const tgtV = S.nextVel ?? ui.vel, tgtRpm = rpmOf(tgtV), act = Math.round(tgtRpm * S.fwSpeed / 10) * 10;
+  const chip = document.getElementById("rpmchip"), chipTxt = "Flywheel " + act.toLocaleString() + " / " + tgtRpm.toLocaleString() + " rpm";
+  if (chip.textContent !== chipTxt) { chip.textContent = chipTxt; chip.classList.toggle("low", S.fwSpeed < 0.97); }
+  const logEl = document.getElementById("shotlog");
+  const logHtml = S.log.length ? "<b>#</b><b>ball</b><b>rpm</b><b>exit</b><b>hood</b><b>result</b>" + S.log.map(e => "<span>" + e.n + "</span><span>" + e.b.type + "</span><span>" +
+    Math.round(e.rpm / 10) * 10 + "</span><span>" + e.b.exitV + " ft/s</span><span>" + e.b.angle + "°" + (e.b.comp && +e.b.comp !== 0 ? " (" + (e.b.comp > 0 ? "+" : "") + e.b.comp + (e.b.best ? ", max" : "") + ")" : "") +
+    "</span><span>" + e.res + "</span>").join("") : "";
+  if (logEl.innerHTML !== logHtml) logEl.innerHTML = logHtml;
   const rows = [];
   if (R.rev === "A") rows.push(["Lid lift", S.lid.toFixed(2) + " in"]);
   else rows.push(["Arm lift 1 / 2 / 3", S.lift.map(l => l.toFixed(1)).join(" / ") + " in"]);
@@ -1090,6 +1166,7 @@ async function showRev() {
 seg("rev", v => { ui.rev = v; showRev(); });
 seg("sc", v => { ui.sc = v; if (ready) resetSim(); });
 seg("speed", v => { ui.speed = +v; });
+seg("comp", v => { ui.comp = v; if (ui.rapid && ready) resetSim(); });
 seg("view", v => { ui.view = v; });
 const playBtn = document.getElementById("play");
 playBtn.addEventListener("click", () => {
@@ -1184,7 +1261,7 @@ const n1 = v => (+v).toFixed(1);
 function updateMath() {
   if (mathEl.hidden) return;
   const {live, type, angle, vel} = shotParams();
-  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, ui.cd, !!window.katex].join();
+  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, ui.cd, ui.rapid, ui.comp, S.shotsFired, !!window.katex].join();
   if (key === mathKey) return;
   mathKey = key;
   const g = geom(type, angle), t = rad(angle), needND = neededSpeedNoDrag(type, angle), need = neededSpeed(type, angle), v = vel * 12;
@@ -1240,7 +1317,7 @@ function updateMath() {
     "<h3>Flywheel speed</h3>" +
     tex("\\text{rpm}=\\dfrac{2v_0}{\\eta\\,\\pi d_w}\\cdot60=\\dfrac{2(" + Math.round(v) + ")}{0.9\\,\\pi(3.78)}\\cdot60\\approx" + rpm.toLocaleString()) +
     "<p>Flywheel: two goBILDA Hogback 96 mm (3.78 in) wheels. The ball rolls between the spinning tread and the still hood, so its centre moves at half the tread speed; η = 0.9 allows for slip (a guess, calibrate it). That's " + Math.round(rpm / 60) + "% of the 6000 rpm motor.</p>" +
-    flyHTML(type, vel) +
+    flyHTML(type, vel) + rapidHTML(type) +
     "<h3>Hood squeeze</h3>" +
     tex("s=d_{ball}-\\text{gap}=" + n1(d) + "-" + n1(gap) + "=" + n1(sq) + "\\ \\text{in}") +
     gripHTML(type, vel, sq);
@@ -1261,6 +1338,35 @@ function flyHTML(type, vel) {
     "<span>nectar</span><span>" + N.Eb.toFixed(2) + " J</span><span>" + (N.dip * 100).toFixed(1) + "%</span><span>" + Math.round(N.trec * 1000) + " ms</span></div>" +
     "<p>*Full motor power, τ = τ<sub>stall</sub>(1 − ω/ω<sub>free</sub>) with the 5203's 0.144 N·m stall torque. Nectar is 66% heavier, so it pulls the wheel down 66% harder and takes 66% longer to recover. Rapid fire: space shots at least ~" + Math.round(Math.max(P.trec, N.trec) * 1000 / 10) * 10 + " ms apart or the next ball leaves slow.</p>";
 }
+// rapid fire: how the hood angle (or the wait) makes up for the slower wheel
+function rapidHTML(type) {
+  const ang = ui.angle, v0 = shotSpeed(type, ang), dip = shotDip(type, v0), goal = AIM().y;
+  const hNom = heightAtAim(type, ang, v0), aMax = maxHeightAngle(type, v0), hMax = heightAtAim(type, aMax, v0);
+  const win = windowFor(type, ang);
+  // how many back-to-back shots stay in, for each fix (each shot takes `dip` off the wheel, no recovery in between)
+  const count = (startV, tilt) => { let n = 0, f = 1; for (; n < 12; n++) {
+      const v = startV * f, a = tilt ? (solveAngle(type, v, ang) ?? maxHeightAngle(type, v)) : ang;
+      if (flyOutcome(type, a, v).res !== "in") break; f *= 1 - netRapidDrop(type, v); } return n; };
+  const nNone = count(v0, false), nTilt = count(v0, true), nHigh = win ? count(win[1] - 0.15, false) : 0;
+  const pct = win ? Math.round((win[1] - win[0]) / win[1] * 100) : 0;
+  let h = "<h3>Rapid fire: keeping every ball in</h3>" +
+    "<p>Each " + type + " shot takes ~" + (dip * 100).toFixed(1) + "% off the wheel (≈" + (netRapidDrop(type, v0) * 100).toFixed(1) + "% net once the motor catches up between balls), and the ball's exit speed follows the wheel: v = v<sub>target</sub>·(ω/ω<sub>target</sub>). Fired back to back, each ball leaves a bit slower and crosses the hive a bit lower.</p>" +
+    "<p><b>Tilting the hood.</b> For the speed the ball will actually leave at, pick the angle that still reaches h<sub>goal</sub>. Without drag:</p>" +
+    tex("\\tan\\theta=\\dfrac{v^{2}\\pm\\sqrt{v^{4}-g\\left(g x^{2}+2\\,\\Delta h\\,v^{2}\\right)}}{g\\,x}") +
+    "<p>But the angle can only buy a little height: at " + n1(v0) + " ft/s the ball reaches " + n1(hNom) + " in at " + ang + "°, and the most any angle gets is " + n1(hMax) + " in (at " + aMax.toFixed(1) + "°). " +
+    (aMax > ang + 1 ? "So the hood has to tilt steeper to make up for a slower ball, with only " + n1(hMax - hNom) + " in to spare."
+                    : aMax < ang - 1 ? "Here " + ang + "° is already steeper than the best angle, so a slower ball needs a flatter hood, and there is almost nothing to gain."
+                    : "Here " + ang + "° is already about the best angle, so tilting gains almost nothing.") + "</p>";
+  const last = [...S.log].reverse().find(e => e.b.comp && +e.b.comp !== 0);
+  if (last) h += tex("\\text{shot " + last.n + ":}\\ \\omega=" + Math.round(last.b.fw * 100) + "\\%\\Rightarrow v=" + last.b.exitV + "\\tfrac{\\text{ft}}{\\text{s}}\\Rightarrow\\theta=" + last.b.angle + "^\\circ\\,(" + (last.b.comp > 0 ? "+" : "") + last.b.comp + "^\\circ)");
+  h += "<p><b>The speed window is the real budget.</b> " + (win ? "It's " + n1(win[0]) + "–" + n1(win[1]) + " ft/s, about " + pct + "% wide. " : "") +
+    "Aiming at the middle wastes half of it on the first ball. <b>Aim high</b> starts near the top (" + (win ? n1(win[1] - 0.15) : "–") + " ft/s) so the slower balls step down through the whole window.</p>" +
+    "<div class='vars' style='grid-template-columns:auto auto'><span>no fix</span><span>" + nNone + " in a row</span><span>tilt hood</span><span>" + nTilt + " in a row</span><span>aim high</span><span>" + nHigh + " in a row</span><span>wait for rpm</span><span>all, ~" + Math.round(flyRecover(type) * 1000) + " ms apart</span></div>" +
+    "<p>Counts assume your intake feeds balls back to back, about " + Math.round(feedGap(type) * 1000) + " ms apart. In that time the motor wins back " + (recoverRate(v0) * feedGap(type) * 100).toFixed(1) +
+    "% of the " + (dip * 100).toFixed(1) + "% each shot takes, so each shot costs about <b>" + (netRapidDrop(type, v0) * 100).toFixed(1) + "% net</b>. Best real-world combo: aim high, and only feed the next ball once the wheel is back inside the window, not all the way to 100%.</p>";
+  return h;
+}
+const flyRecover = type => { const v = shotSpeed(type, ui.angle), w = flyOmega(v), dip = shotDip(type, v); return FLY.I * dip * w / (FLY.tauStall * (1 - w / FLY.wFree)); };
 // how hard the tread has to press to get the ball up to speed, and how much compression that takes
 function gripHTML(type, vel, sqNow) {
   const L = 3.0 * 0.0254 * rad(134), row = t => {
@@ -1518,7 +1624,7 @@ renderer.setAnimationLoop(now => {
   if (ui.mode !== "schem") { renderer.render(scene, camera); labels.render(scene, camera); }
 });
 showRev();
-window.__pollinator = () => ({R, S, THREE});   // debug hook for automated checks
+window.__pollinator = () => ({R, S, THREE, heightAtAim, solveAngle, neededSpeed, ui});   // debug hook for automated checks
 </script>
 </body>
 </html>
