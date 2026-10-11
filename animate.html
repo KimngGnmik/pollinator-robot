@@ -158,6 +158,7 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
   <label class="slider"><span class="label">Angle to hive</span><input type="range" id="bearing" min="-60" max="60" step="5" value="0"><output id="bearingOut">0° (head-on)</output></label>
   <label class="slider"><span class="label">Exit speed</span><input type="range" id="vel" min="12" max="40" step="0.5" value="18.5"><output id="velOut">18.5 ft/s</output></label>
   <button type="button" class="btn" id="auto" aria-pressed="true">Auto speed</button>
+  <label class="slider"><span class="label">Air drag C<sub style="text-transform:none">d</sub></span><input type="range" id="cd" min="0" max="0.8" step="0.05" value="0.5"><output id="cdOut">0.50</output></label>
   <label class="slider"><span class="label">Launch angle</span><input type="range" id="angle" min="45" max="75" step="1" value="60"><output id="angleOut">60°</output></label>
   <button type="button" class="btn" id="rapid" aria-pressed="false">Rapid fire</button>
   <button type="button" class="btn" id="sweep" aria-pressed="false">Sweep 45–75°</button>
@@ -188,6 +189,7 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
       <p><b>Hive</b> is the official BIOBUZZ HIVE (competition manual §9.6): pivot 43.95 in up, arm tilted 30°, upward cell opening 53.5–65.6 in above the tiles, facing the robot. Hive distance = front bumper to the hive pivot. Auto speed picks the exit speed that puts the ball through the middle of the opening.</p>
       <p><b>Orange lip</b> = adjustable hood exit. The CAD hood is fixed at 60°; the lip shows how far the hood has to wrap for other angles (exit point = 180° − launch angle round the wrap).</p>
       <p><b>Dashed line</b> = the ball in the air right now, or the next shot. Timing is slowed down so you can follow the ball.</p>
+      <p><b>Air drag</b> is on: the real balls (official CAD sizes, AndyMark weights 0.055 / 0.091 lb) are light and full of holes, so drag is 15–25% of their weight. The drag coefficient C<sub>d</sub> = 0.5 is an estimate; calibrate it with one real shot.</p>
       <p><b>Balls are stiff</b>, so the soft flywheel tread takes the squeeze (ball overlapping the wheel = tread compression). The flywheel dip per shot in rapid fire is an estimate.</p>
     </details>
   </div>
@@ -209,7 +211,8 @@ const MODELS = {"A": "H4sIAAAAAAAC/+y9CZxlRZEvHOz71rIJCkWzyFJdnH1hqbrN1o2sNtgii1
 const HALF = 8.75, FW = {x: 12, z: 5.5}, FW_R = 2, ROLLER_R = 1;
 const ROLLERS = [[0.75, 3.4], [4.5, 4.4], [9.0, 4.4]];
 const PIVOTS = [[2.6, 5.4], [2.6, 5.4], [6.75, 5.6]];          // Rev B arm pivots (jackshafts)
-const BALL = {pollen: {r: 1.4, hex: "#E2B714"}, nectar: {r: 1.8, hex: "#C0392B"}};
+// sizes from the official field CAD (am-5851 71.12 mm, am-5852 91.95 mm), masses from AndyMark (0.055 / 0.091 lb)
+const BALL = {pollen: {r: 1.4, m: 0.0249, hex: "#E2B714"}, nectar: {r: 1.81, m: 0.0413, hex: "#C0392B"}};
 const SQ = [0.9, 0.57, 0.57]; // roller compression before it has to lift (pollen rides under at rest; roller 1 sits low over the entry lip)
 const COAST_DECEL = 8;     // in/s^2 rolling on the rails: coasts ~3 in from intake speed
 const V_IN = 7;            // ball speed through the intake, in/s (slowed for viewing)
@@ -256,7 +259,8 @@ const toHive = p => {
 };
 const hiveLocal = (x, y, z) => new THREE.Vector3(x, HV.py + z * HS + y * HC, z * HC - y * HS);   // inside the hive group
 const fromHive = (x, y, z) => { const l = hiveLocal(x, y, z); return flatToWorld(l.x, l.y, l.z); };
-const inOpening = (x, y, r) => Math.abs(x) <= HV.w - r && y >= HV.base + r * 0.8 && y <= roofY(x) - r * 1.0;
+// side clearance: coming in at angle phi, the ball's radius eats r / cos(phi) of the opening's width
+const inOpening = (x, y, r) => Math.abs(x) <= HV.w - r / Math.max(0.2, Math.cos(rad(HX.beta))) && y >= HV.base + r * 0.8 && y <= roofY(x) - r * 1.0;
 const AIM = () => fromHive(0, HV.base + 6, HV.half);         // middle of the upward opening
 const ballRc = (rev, type) => hoodR(rev, type) - BALL[type].r;   // stiff ball rides on the hood, the tread gives
 const hoodR = (rev, type) => rev === "A" ? 4.5 : (type === "nectar" ? 5.2 : 4.4);
@@ -554,9 +558,43 @@ function armAngle(k, lift) {
 }
 
 // ---------------------------------------------------------------- UI state
-const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, bearing: 0, auto: true, mode: "3d"};
+const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, dist: 60, bearing: 0, auto: true, cd: 0.5, mode: "3d"};
 // exit speed (ft/s) that carries a ball of this type, launched at `angle`, through the middle of the opening
+// air drag: a = k |v| v with k = rho Cd A / (2 m), converted to inches (holed balls: Cd is an estimate, calibrate it)
+const dragK = type => ui.cd * 0.5 * 1.204 * Math.PI * (BALL[type].r * 0.0254) ** 2 / BALL[type].m * 0.0254;
+function airStep(v, p, k, h) {
+  const sp = v.length();
+  v.y -= G * h;
+  if (k) v.addScaledVector(v, -k * sp * h);
+  p.addScaledVector(v, h);
+}
+const needCache = new Map();
+// height (in) where a shot at `vel` ft/s crosses the vertical plane through the aim point, with drag
+function heightAtAim(type, angle, vel) {
+  const rc = ballRc(ui.rev, type), th = rad(180 - angle), k = dragK(type), az = AIM().z;
+  const p = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), v = new THREE.Vector3(0, Math.sin(th), Math.cos(th)).multiplyScalar(vel * 12);
+  for (let i = 0; i < 6000; i++) {
+    const py = p.y, pz = p.z;
+    airStep(v, p, k, 1 / 480);
+    if (p.z <= az) return py + (p.y - py) * (pz - az) / (pz - p.z);
+    if (p.y < 0) return -1e9;
+  }
+  return -1e9;
+}
+// with drag there is no closed form, so bisect on the speed (height at the aim plane rises with speed)
 function neededSpeed(type, angle) {
+  const nd = neededSpeedNoDrag(type, angle);
+  if (nd == null || ui.cd <= 0) return nd;
+  const key = [ui.rev, type, angle, ui.dist, ui.bearing, ui.cd].join();
+  if (needCache.has(key)) return needCache.get(key);
+  const goal = AIM().y;
+  let lo = nd, hi = nd * 1.8;
+  for (let i = 0; i < 32; i++) { const mid = (lo + hi) / 2; if (heightAtAim(type, angle, mid) < goal) lo = mid; else hi = mid; }
+  if (needCache.size > 200) needCache.clear();
+  needCache.set(key, hi);
+  return hi;
+}
+function neededSpeedNoDrag(type, angle) {
   const th = rad(180 - angle), rc = ballRc(ui.rev, type);
   const e = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), a = AIM();
   const L = e.z - a.z, H = a.y - e.y, ta = Math.tan(rad(angle)), den = 2 * Math.cos(rad(angle)) ** 2 * (L * ta - H);
@@ -682,8 +720,7 @@ function step(dt) {
   // flight: through the hive's upward opening, off its rim, over it, or onto the floor
   for (const b of S.balls.filter(b => b.state === "flight")) {
     const h = dt * FLIGHT_SCALE, before = toHive(b.pos);
-    b.vel.y -= G * h;
-    b.pos.addScaledVector(b.vel, h);
+    airStep(b.vel, b.pos, dragK(b.type), h);
     b.spin += b.vel.length() * h / b.r;
     if (!b.landed) { b.trail.push(b.pos.clone()); b.peak = Math.max(b.peak || 0, b.pos.y); }
     const after = toHive(b.pos);
@@ -873,16 +910,16 @@ function shotParams() {
 }
 function predict() {
   const {live, type, angle, vel} = shotParams();
-  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, live ? "live" : "next"].join();
+  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, ui.cd, live ? "live" : "next"].join();
   if (key === predictKey) return;
   predictKey = key;
   const rc = ballRc(ui.rev, type), th = rad(180 - angle), r = BALL[type].r;
-  const p = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), v = new THREE.Vector3(0, Math.sin(th), Math.cos(th)).multiplyScalar(vel * 12);
+  const p = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), v = new THREE.Vector3(0, Math.sin(th), Math.cos(th)).multiplyScalar(vel * 12), k = dragK(type);
   predictPts = [p.clone()];
   predictOut = "short";
   for (let i = 0; i < 4000 && p.y > r; i++) {
     const before = toHive(p);
-    v.y -= G / 240; p.addScaledVector(v, 1 / 240); predictPts.push(p.clone());
+    airStep(v, p, k, 1 / 240); predictPts.push(p.clone());
     const after = toHive(p);
     if (before.z > HV.half && after.z <= HV.half) {
       predictOut = inOpening(after.x, after.y, r) ? "IN at " : after.y >= HV.base ? "over at " : "low at ";
@@ -1061,6 +1098,8 @@ autoBtn.addEventListener("click", () => {
 });
 const distIn = document.getElementById("dist"), distOut = document.getElementById("distOut");
 distIn.addEventListener("input", () => { ui.dist = +distIn.value * 12; distOut.textContent = distIn.value + " ft"; placeHive(); });
+const cdIn = document.getElementById("cd"), cdOut = document.getElementById("cdOut");
+cdIn.addEventListener("input", () => { ui.cd = +cdIn.value; cdOut.textContent = ui.cd === 0 ? "off" : ui.cd.toFixed(2); predictKey = ""; mathKey = ""; });
 const bearIn = document.getElementById("bearing"), bearOut = document.getElementById("bearingOut");
 bearIn.addEventListener("input", () => {
   ui.bearing = +bearIn.value;
@@ -1092,22 +1131,24 @@ if (location.protocol === "file:") document.getElementById("still").href = "Poll
 
 
 // ---------------------------------------------------------------- math panel: the launch equation with live numbers
-function flyOutcome(type, angle, vel) {
-  const rc = ballRc(ui.rev, type), th = rad(180 - angle), r = BALL[type].r;
+function flyOutcome(type, angle, vel) {     // {res: in | low | out, h: height at the opening, peak}
+  const rc = ballRc(ui.rev, type), th = rad(180 - angle), r = BALL[type].r, k = dragK(type);
   const p = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), v = new THREE.Vector3(0, Math.sin(th), Math.cos(th)).multiplyScalar(vel * 12);
+  let peak = p.y;
   for (let i = 0; i < 4000 && p.y > r; i++) {
     const bz = toHive(p).z;
-    v.y -= G / 240; p.addScaledVector(v, 1 / 240);
+    airStep(v, p, k, 1 / 240);
+    peak = Math.max(peak, p.y);
     const a = toHive(p);
-    if (bz > HV.half && a.z <= HV.half) { if (inOpening(a.x, a.y, r)) return "in"; if (a.y < HV.base) return "low"; }
+    if (bz > HV.half && a.z <= HV.half) return {res: inOpening(a.x, a.y, r) ? "in" : a.y < HV.base ? "low" : "out", h: p.y, peak};
   }
-  return "out";
+  return {res: "out", h: null, peak};
 }
 function speedWindow(type, angle, c) {
-  if (c == null || flyOutcome(type, angle, c) !== "in") return null;
+  if (c == null || flyOutcome(type, angle, c).res !== "in") return null;
   let lo = c, hi = c;
-  while (lo > 5 && flyOutcome(type, angle, lo - 0.05) === "in") lo -= 0.05;
-  while (hi < 60 && flyOutcome(type, angle, hi + 0.05) === "in") hi += 0.05;
+  while (lo > 5 && flyOutcome(type, angle, lo - 0.05).res === "in") lo -= 0.05;
+  while (hi < 60 && flyOutcome(type, angle, hi + 0.05).res === "in") hi += 0.05;
   return [lo, hi];
 }
 function geom(type, angle) {          // launch point, aim point and the numbers that go into the equation
@@ -1122,16 +1163,18 @@ const n1 = v => (+v).toFixed(1);
 function updateMath() {
   if (mathEl.hidden) return;
   const {live, type, angle, vel} = shotParams();
-  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, !!window.katex].join();
+  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, ui.cd, !!window.katex].join();
   if (key === mathKey) return;
   mathKey = key;
-  const g = geom(type, angle), t = rad(angle), need = neededSpeed(type, angle), v = vel * 12;
+  const g = geom(type, angle), t = rad(angle), needND = neededSpeedNoDrag(type, angle), need = neededSpeed(type, angle), v = vel * 12;
+  const fo = flyOutcome(type, angle, vel), drag = ui.cd > 0;
+  const m = BALL[type].m, A = Math.PI * (BALL[type].r * 0.0254) ** 2, vs = (need ?? vel) * 0.3048, Fd = 0.5 * 1.204 * ui.cd * A * vs * vs;
   const yAt = g.hb + g.x * Math.tan(t) - G * g.x * g.x / (2 * v * v * Math.cos(t) ** 2);
   const peak = g.hb + (v * Math.sin(t)) ** 2 / (2 * G);
   const xmin = g.dh / Math.tan(t), dmin = (xmin - g.x + ui.dist) / 12;
   const win = speedWindow(type, angle, need);
   const R = hoodR(ui.rev, type), gap = R - 2, d = 2 * BALL[type].r, sq = Math.max(0, d - gap), rpm = rpmOf(vel);
-  const inside = flyOutcome(type, angle, vel) === "in";
+  const inside = fo.res === "in";
   const src = live ? "the ball in the air" : ui.auto ? "the next shot (auto speed)" : "the next shot (your speed)";
   mathEl.innerHTML =
     "<h3>Shot geometry</h3><p>Side view, for " + src + " (" + type + ", " + angle + "°).</p>" +
@@ -1146,21 +1189,31 @@ function updateMath() {
     "<h3>Aim tolerance (left / right)</h3>" +
     tex("\\delta=\\arctan\\dfrac{\\tfrac{w}{2}\\cos\\varphi-r_{ball}}{x}=\\arctan\\dfrac{" + n1(10 * Math.cos(rad(HX.beta))) + "-" + n1(BALL[type].r) + "}{" + n1(g.x) + "}=\\pm" + n1(Math.atan(Math.max(0, 10 * Math.cos(rad(HX.beta)) - BALL[type].r) / g.x) * 180 / Math.PI) + "^\\circ") +
     "<p>How far the robot's heading can be off and still go in. " + (Math.abs(HX.beta) >= 0.5 ? "Head-on it would be ±" + n1(Math.atan((10 - BALL[type].r) / g.x) * 180 / Math.PI) + "°; from this angle the opening looks narrower, so aim matters more." : "Shooting from the side shrinks this.") + "</p>" +
-    "<h3>Launch speed needed</h3>" +
+    "<h3>Launch speed needed, without air drag</h3>" +
     tex("v_0=\\sqrt{\\dfrac{g\\,x^{2}}{2\\cos^{2}\\theta\\,\\bigl(x\\tan\\theta-(h_{goal}-h_{bot})\\bigr)}}") +
-    (need == null ? "<p class='bad'>Too close: x·tanθ is smaller than h<sub>goal</sub> − h<sub>bot</sub>, so no speed reaches the opening at " + angle + "°.</p>" :
+    (needND == null ? "<p class='bad'>Too close: x·tanθ is smaller than h<sub>goal</sub> − h<sub>bot</sub>, so no speed reaches the opening at " + angle + "°.</p>" :
       tex("=\\sqrt{\\dfrac{386\\cdot" + n1(g.x) + "^{2}}{2\\cos^{2}" + angle + "^\\circ\\,(" + n1(g.x) + "\\tan" + angle + "^\\circ-" + n1(g.dh) + ")}}=" +
-          Math.round(need * 12) + "\\ \\tfrac{\\text{in}}{\\text{s}}=\\mathbf{" + n1(need) + "\\ \\tfrac{\\text{ft}}{\\text{s}}}")) +
+          Math.round(needND * 12) + "\\ \\tfrac{\\text{in}}{\\text{s}}=" + n1(needND) + "\\ \\tfrac{\\text{ft}}{\\text{s}}")) +
+    "<h3>With air drag</h3>" +
+    (!drag ? "<p>Air drag is off (C<sub>d</sub> = 0), so the speed above is what auto speed uses.</p>" :
+      tex("F_d=\\tfrac12\\rho\\,C_d\\,A\\,v^{2}=\\tfrac12(1.204)(" + ui.cd.toFixed(2) + ")(" + (A * 1e4).toFixed(1) + "\\,\\text{cm}^2)(" + vs.toFixed(2) + "\\tfrac{\\text{m}}{\\text{s}})^{2}=" + Fd.toFixed(3) + "\\ \\text{N}") +
+      tex("\\dfrac{F_d}{m\\,g}=\\dfrac{" + Fd.toFixed(3) + "}{" + (m * 1000).toFixed(1) + "\\,\\text{g}\\cdot9.81}=" + Math.round(100 * Fd / (m * 9.81)) + "\\%\\ \\text{of gravity}") +
+      "<p>The holed balls are light, so drag is a big fraction of their weight. There is no closed form with drag, so the speed is found by simulating the flight and searching:</p>" +
+      (need == null ? "" : tex("v_0^{\\,drag}=\\mathbf{" + n1(need) + "\\ \\tfrac{\\text{ft}}{\\text{s}}}\\quad(+" + n1(need - needND) + "\\ \\text{vs. no drag})")) +
+      "<p>This is what auto speed uses. C<sub>d</sub> = " + ui.cd.toFixed(2) + " is an estimate for holed balls (0.4–0.6 is typical). Calibrate it from one real shot: fire at a known speed and distance, see where it crosses the hive, and adjust C<sub>d</sub> until the app agrees.</p>") +
     "<h3>Height at the hive</h3>" +
     tex("y(x)=h_{bot}+x\\tan\\theta-\\dfrac{g\\,x^{2}}{2v_0^{2}\\cos^{2}\\theta}") +
     tex("=" + n1(g.hb) + "+" + n1(g.x) + "\\tan" + angle + "^\\circ-\\dfrac{386\\cdot" + n1(g.x) + "^{2}}{2(" + Math.round(v) + ")^{2}\\cos^{2}" + angle + "^\\circ}=" + n1(yAt) + "\\ \\text{in}") +
-    "<p>At " + vel + " ft/s: <span class='" + (inside ? "ok'>goes in" : "bad'>misses") + "</span> (opening 53.5–65.6 in, less the ball radius).</p>" +
+    "<p>" + (drag && fo.h != null ? "Without drag, " + vel + " ft/s would reach " + n1(yAt) + " in. Drag pulls it down " + n1(yAt - fo.h) + " in, so the simulated ball crosses the opening at <b>" + n1(fo.h) + " in</b>."
+                                 : "At " + vel + " ft/s.") +
+    " Result: <span class='" + (inside ? "ok'>goes in" : "bad'>misses") + "</span> (opening 53.5–65.6 in, less the ball radius).</p>" +
     "<h3>Speed window</h3>" +
     (win ? "<p>Goes in from <b>" + n1(win[0]) + " to " + n1(win[1]) + " ft/s</b>, so ±" + ((win[1] - win[0]) / 2).toFixed(2) + " ft/s, or about ±" + Math.round((win[1] - win[0]) / 2 * 114.6) + " rpm at the flywheel. Simulated through the tilted opening.</p>"
          : "<p class='bad'>No speed puts it in from here at " + angle + "°.</p>") +
     "<h3>Peak height</h3>" +
     tex("h_{max}=h_{bot}+\\dfrac{(v_0\\sin\\theta)^{2}}{2g}=" + n1(g.hb) + "+\\dfrac{(" + Math.round(v) + "\\sin" + angle + "^\\circ)^{2}}{2\\cdot386}=" + n1(peak) + "\\ \\text{in}") +
-    "<h3>Closest you can shoot</h3>" +
+    (drag ? "<p>With drag the simulated peak is " + n1(fo.peak) + " in.</p>" : "") +
+    "<h3>Closest you can shoot (no drag)</h3>" +
     tex("x_{min}=\\dfrac{h_{goal}-h_{bot}}{\\tan\\theta}=\\dfrac{" + n1(g.dh) + "}{\\tan" + angle + "^\\circ}=" + n1(xmin) + "\\ \\text{in}") +
     "<p>About " + dmin.toFixed(1) + " ft from the front bumper to the hive pivot. Closer than that, the ball can't climb to the opening at " + angle + "°.</p>" +
     "<h3>Flywheel speed</h3>" +
