@@ -171,6 +171,9 @@ summary{cursor:pointer;color:var(--fg);font-weight:600}
     <button type="button" data-v="hood" aria-pressed="true">Tilt hood</button>
     <button type="button" data-v="high" aria-pressed="false">Aim high</button>
     <button type="button" data-v="wait" aria-pressed="false">Wait for rpm</button></span></div>
+  <div><span class="label">Flywheel control</span><span class="seg" id="ctrl">
+    <button type="button" data-v="bang" aria-pressed="true">Bang-bang</button>
+    <button type="button" data-v="pid" aria-pressed="false">PID</button></span></div>
   <button type="button" class="btn" id="sweep" aria-pressed="false">Sweep 45–75°</button>
   <button type="button" class="btn" id="clear">Clear paths</button>
   <button type="button" class="btn" id="cut" aria-pressed="true">Cutaway</button>
@@ -297,7 +300,23 @@ const FW_RECOVER = 0.08;
 // half the roller surface speed (1150 rpm on 2 in rollers = 120 in/s), so balls arrive one ball-length apart.
 const feedGap = type => (2 * BALL[type].r + 0.08) / 60;                        // s between balls (~50 ms pollen)
 const recoverRate = vft => { const w = flyOmega(vft); return FLY.tauStall * (1 - w / FLY.wFree) / (FLY.I * w); };   // fraction of speed per s, full power
-const netRapidDrop = (type, vft) => Math.max(0, shotDip(type, vft) - recoverRate(vft) * feedGap(type));
+// Flywheel controller. Bang-bang: full power whenever below target, so the speed climbs back at the full-power rate.
+// PID (P term, power = KP x error, capped at full): full power only while more than 1/KP below, then it eases in.
+const KP = 10;   // full power at 10% below target, a typical hand-tuned value
+function recoverDeficit(d, gap, vft) {               // speed deficit (fraction) left after `gap` seconds of recovery
+  const r = recoverRate(vft);
+  if (ui.ctrl === "bang") return Math.max(0, d - r * gap);
+  const knee = 1 / KP, t1 = Math.max(0, (d - knee) / r);
+  if (gap <= t1) return d - r * gap;
+  return Math.min(d, knee) * Math.exp(-(gap - t1) * KP * r);
+}
+function recoverTime(d, to, vft, ctrl = ui.ctrl) {   // seconds to get from deficit d back to deficit `to`
+  const r = recoverRate(vft);
+  if (ctrl === "bang") return Math.max(0, d - to) / r;
+  const knee = 1 / KP, t1 = Math.max(0, (d - knee) / r), d1 = Math.min(d, knee);
+  return t1 + Math.max(0, Math.log(d1 / to)) / (KP * r);
+}
+const netRapidDrop = (type, vft) => { const dip = shotDip(type, vft); return recoverDeficit(dip, feedGap(type), vft); };
 const SCEN = {
   pollen: [["pollen", 0], ["pollen", 1.0], ["pollen", 2.0], ["pollen", 3.0]],
   nectar: [["nectar", 0], ["nectar", 1.3], ["nectar", 2.6]],
@@ -588,7 +607,7 @@ function armAngle(k, lift) {
 }
 
 // ---------------------------------------------------------------- UI state
-const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, comp: "hood", dist: 60, bearing: 0, auto: true, cd: 0.5, mode: "3d"};
+const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false, comp: "hood", ctrl: "bang", dist: 60, bearing: 0, auto: true, cd: 0.5, mode: "3d"};
 // exit speed (ft/s) that carries a ball of this type, launched at `angle`, through the middle of the opening
 // air drag: a = k |v| v with k = rho Cd A / (2 m), converted to inches (holed balls: Cd is an estimate, calibrate it)
 const dragK = type => ui.cd * 0.5 * 1.204 * Math.PI * (BALL[type].r * 0.0254) ** 2 / BALL[type].m * 0.0254;
@@ -825,7 +844,7 @@ function capture(b) {
   b.R = ui.rev === "A" ? 4.5 : S.bandR;
   b.rc = b.R - b.r;
   b.sq = Math.max(0, 2 * b.r - (b.R - fwR()));
-  if (ui.rapid && ui.comp !== "wait" && S.shotsFired > 0) S.fwSpeed = Math.min(1, S.fwSpeed + recoverRate(shotSpeed(b.type, ui.angle)) * feedGap(b.type));
+  if (ui.rapid && ui.comp !== "wait" && S.shotsFired > 0) S.fwSpeed = 1 - recoverDeficit(1 - S.fwSpeed, feedGap(b.type), shotSpeed(b.type, ui.angle));
   b.angle = ui.rapid && ui.comp === "hood" ? ui.angle : S.lip;
   b.target = shotSpeed(b.type, b.angle);
   if (ui.rapid && ui.comp === "high" && ui.auto) {    // first ball near the top of the window, later (slower) ones step down through it
@@ -1167,6 +1186,7 @@ seg("rev", v => { ui.rev = v; showRev(); });
 seg("sc", v => { ui.sc = v; if (ready) resetSim(); });
 seg("speed", v => { ui.speed = +v; });
 seg("comp", v => { ui.comp = v; if (ui.rapid && ready) resetSim(); });
+seg("ctrl", v => { ui.ctrl = v; mathKey = ""; if (ui.rapid && ready) resetSim(); });
 seg("view", v => { ui.view = v; });
 const playBtn = document.getElementById("play");
 playBtn.addEventListener("click", () => {
@@ -1261,7 +1281,7 @@ const n1 = v => (+v).toFixed(1);
 function updateMath() {
   if (mathEl.hidden) return;
   const {live, type, angle, vel} = shotParams();
-  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, ui.cd, ui.rapid, ui.comp, S.shotsFired, !!window.katex].join();
+  const key = [ui.rev, type, angle, vel, ui.dist, ui.bearing, ui.cd, ui.rapid, ui.comp, ui.ctrl, S.shotsFired, !!window.katex].join();
   if (key === mathKey) return;
   mathKey = key;
   const g = geom(type, angle), t = rad(angle), needND = neededSpeedNoDrag(type, angle), need = neededSpeed(type, angle), v = vel * 12;
@@ -1346,10 +1366,10 @@ function rapidHTML(type) {
   // how many back-to-back shots stay in, for each fix (each shot takes `dip` off the wheel, no recovery in between)
   const count = (startV, tilt) => { let n = 0, f = 1; for (; n < 12; n++) {
       const v = startV * f, a = tilt ? (solveAngle(type, v, ang) ?? maxHeightAngle(type, v)) : ang;
-      if (flyOutcome(type, a, v).res !== "in") break; f *= 1 - netRapidDrop(type, v); } return n; };
+      if (flyOutcome(type, a, v).res !== "in") break; f = 1 - recoverDeficit(1 - f * (1 - dip), feedGap(type), v); } return n; };
   const nNone = count(v0, false), nTilt = count(v0, true), nHigh = win ? count(win[1] - 0.15, false) : 0;
   const pct = win ? Math.round((win[1] - win[0]) / win[1] * 100) : 0;
-  let h = "<h3>Rapid fire: keeping every ball in</h3>" +
+  let h = "<h3>Rapid fire: keeping every ball in</h3><p>Flywheel control: <b>" + (ui.ctrl === "bang" ? "bang-bang" : "PID") + "</b> (switch it under the controls).</p>" +
     "<p>Each " + type + " shot takes ~" + (dip * 100).toFixed(1) + "% off the wheel (≈" + (netRapidDrop(type, v0) * 100).toFixed(1) + "% net once the motor catches up between balls), and the ball's exit speed follows the wheel: v = v<sub>target</sub>·(ω/ω<sub>target</sub>). Fired back to back, each ball leaves a bit slower and crosses the hive a bit lower.</p>" +
     "<p><b>Tilting the hood.</b> For the speed the ball will actually leave at, pick the angle that still reaches h<sub>goal</sub>. Without drag:</p>" +
     tex("\\tan\\theta=\\dfrac{v^{2}\\pm\\sqrt{v^{4}-g\\left(g x^{2}+2\\,\\Delta h\\,v^{2}\\right)}}{g\\,x}") +
@@ -1361,12 +1381,23 @@ function rapidHTML(type) {
   if (last) h += tex("\\text{shot " + last.n + ":}\\ \\omega=" + Math.round(last.b.fw * 100) + "\\%\\Rightarrow v=" + last.b.exitV + "\\tfrac{\\text{ft}}{\\text{s}}\\Rightarrow\\theta=" + last.b.angle + "^\\circ\\,(" + (last.b.comp > 0 ? "+" : "") + last.b.comp + "^\\circ)");
   h += "<p><b>The speed window is the real budget.</b> " + (win ? "It's " + n1(win[0]) + "–" + n1(win[1]) + " ft/s, about " + pct + "% wide. " : "") +
     "Aiming at the middle wastes half of it on the first ball. <b>Aim high</b> starts near the top (" + (win ? n1(win[1] - 0.15) : "–") + " ft/s) so the slower balls step down through the whole window.</p>" +
+    "<h3>Flywheel control: bang-bang vs PID</h3>" +
+    "<p><b>Bang-bang</b> gives the motor full power whenever the wheel is below target and cuts it once it's back, so the wheel climbs at the fastest rate the motor can manage:</p>" +
+    tex("\\dfrac{d\\omega}{dt}=\\dfrac{\\tau_{avail}}{I},\\qquad \\tau_{avail}=\\tau_{stall}\\Bigl(1-\\dfrac{\\omega}{\\omega_{free}}\\Bigr)") +
+    "<p>A <b>PID</b> loop (P term, full power at " + Math.round(100 / KP) + "% below target) also starts at full power, but once it's within " + Math.round(100 / KP) + "% it eases off in proportion to the error, so the last few percent come back slowly:</p>" +
+    tex("\\text{power}=\\min(1,\\ k_P\\,e)\\ \\Rightarrow\\ e(t)=e_0\\,e^{-t/T},\\quad T=\\dfrac{I\\omega}{k_P\\,\\tau_{avail}}=" + Math.round(1000 / (KP * recoverRate(v0))) + "\\ \\text{ms}") +
+    (() => { const g = feedGap(type), r = recoverRate(v0), rb = Math.min(dip, r * g), knee = 1 / KP,
+               rp = dip > knee ? Math.min(dip, r * g) : dip * (1 - Math.exp(-g * KP * r));
+      return "<div class='vars' style='grid-template-columns:auto auto auto'><span></span><span><b>bang-bang</b></span><span><b>PID</b></span>" +
+        "<span>won back between balls</span><span>" + (rb * 100).toFixed(1) + "%</span><span>" + (rp * 100).toFixed(1) + "%</span>" +
+        "<span>back within 2% after a shot</span><span>" + Math.round(flyRecover(type, "bang") * 1000) + " ms</span><span>" + Math.round(flyRecover(type, "pid") * 1000) + " ms</span></div>"; })() +
+    "<p>Bang-bang wins back far more between balls in rapid fire. Its catch: the wheel overshoots a little each time it cuts out, so most teams use bang-bang far from target and switch to feedforward + a gentle PID inside a small band (say ±2%) to hold speed steady. In FTC code that's a few lines: <code>power = (rpm &lt; target − band) ? 1.0 : kF·target + kP·(target − rpm)</code>.</p>" +
     "<div class='vars' style='grid-template-columns:auto auto'><span>no fix</span><span>" + nNone + " in a row</span><span>tilt hood</span><span>" + nTilt + " in a row</span><span>aim high</span><span>" + nHigh + " in a row</span><span>wait for rpm</span><span>all, ~" + Math.round(flyRecover(type) * 1000) + " ms apart</span></div>" +
-    "<p>Counts assume your intake feeds balls back to back, about " + Math.round(feedGap(type) * 1000) + " ms apart. In that time the motor wins back " + (recoverRate(v0) * feedGap(type) * 100).toFixed(1) +
+    "<p>Counts assume your intake feeds balls back to back, about " + Math.round(feedGap(type) * 1000) + " ms apart. In that time " + (ui.ctrl === "bang" ? "bang-bang" : "the PID loop") + " wins back " + ((dip - netRapidDrop(type, v0)) * 100).toFixed(1) +
     "% of the " + (dip * 100).toFixed(1) + "% each shot takes, so each shot costs about <b>" + (netRapidDrop(type, v0) * 100).toFixed(1) + "% net</b>. Best real-world combo: aim high, and only feed the next ball once the wheel is back inside the window, not all the way to 100%.</p>";
   return h;
 }
-const flyRecover = type => { const v = shotSpeed(type, ui.angle), w = flyOmega(v), dip = shotDip(type, v); return FLY.I * dip * w / (FLY.tauStall * (1 - w / FLY.wFree)); };
+const flyRecover = (type, ctrl = ui.ctrl) => { const v = shotSpeed(type, ui.angle); return recoverTime(shotDip(type, v), 0.02, v, ctrl); };   // back within 2%
 // how hard the tread has to press to get the ball up to speed, and how much compression that takes
 function gripHTML(type, vel, sqNow) {
   const L = 3.0 * 0.0254 * rad(134), row = t => {
