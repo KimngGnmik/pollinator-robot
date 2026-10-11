@@ -64,9 +64,10 @@ footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap
       <button type="button" data-v="A" aria-pressed="true">Rev A · one lid</button>
       <button type="button" data-v="B" aria-pressed="false">Rev B · own arms</button></span></div>
     <div><span class="label">Load</span><span class="seg" id="sc">
-      <button type="button" data-v="pollen" aria-pressed="true">Pollen</button>
-      <button type="button" data-v="nectar" aria-pressed="false">Nectar</button>
-      <button type="button" data-v="mixed" aria-pressed="false">Mixed</button></span></div>
+      <button type="button" data-v="pollen" aria-pressed="true">Pollen ×4</button>
+      <button type="button" data-v="nectar" aria-pressed="false">Nectar ×3</button>
+      <button type="button" data-v="mixed" aria-pressed="false">Mixed</button>
+      <button type="button" data-v="five" aria-pressed="false">5th ball</button></span></div>
   </div>
 </header>
 <main>
@@ -86,6 +87,7 @@ footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap
     <button type="button" data-v="1" aria-pressed="true">1×</button></span></div>
   <label class="slider"><span class="label">Launch angle</span><input type="range" id="angle" min="45" max="75" step="1" value="60"><output id="angleOut">60°</output></label>
   <label class="slider"><span class="label">Exit speed</span><input type="range" id="vel" min="12" max="24" step="0.5" value="18.5"><output id="velOut">18.5 ft/s</output></label>
+  <button type="button" class="btn" id="rapid" aria-pressed="false">Rapid fire</button>
   <button type="button" class="btn" id="sweep" aria-pressed="false">Sweep 45–75°</button>
   <button type="button" class="btn" id="clear">Clear paths</button>
   <button type="button" class="btn" id="cut" aria-pressed="true">Cutaway</button>
@@ -94,7 +96,7 @@ footer{border-top:1px solid var(--rule);padding:10px 16px;display:flex;flex-wrap
     <button type="button" data-v="mech" aria-pressed="false">Mechanism</button>
     <button type="button" data-v="shot" aria-pressed="false">Full shot</button>
     <button type="button" data-v="iso" aria-pressed="false">3D</button></span></div>
-  <div class="fine"><i></i>Orange = adjustable hood exit lip. The CAD hood is fixed and launches at 60°; the lip shows how far the hood has to wrap for other angles (the ball leaves where the hood ends: exit point = 180° − launch angle round the wrap). Dashed line = where the next shot will go. Timing is slowed down so you can follow the ball.</div>
+  <div class="fine"><i></i>Orange = adjustable hood exit lip. The CAD hood is fixed and launches at 60°; the lip shows how far the hood has to wrap for other angles (the ball leaves where the hood ends: exit point = 180° − launch angle round the wrap). Dashed line = where the next shot will go. Timing is slowed down so you can follow the ball. Balls are treated as stiff, so the soft flywheel tread takes the squeeze (the ball overlapping the wheel = tread compression). Flywheel dip per shot in rapid fire is an estimate.</div>
 </footer>
 <script type="module">
 import * as THREE from "three";
@@ -127,13 +129,18 @@ const groundZ = (x, r) => {
   return x < 2.5 ? ramp : x > 3 ? railZ(r) : ramp + (railZ(r) - ramp) * smooth((x - 2.5) / 0.5);
 };
 const gateStop = r => 10.2 - r - 0.05;
+const ballRc = (rev, type) => hoodR(rev, type) - BALL[type].r;   // stiff ball rides on the hood, the tread gives
 const hoodR = (rev, type) => rev === "A" ? 4.5 : (type === "nectar" ? 5.2 : 4.4);
 const bandR = (t, R) => 4.5 + (R - 4.5) * smooth((t + 14) / 40);
 const approach = (v, t, d) => v < t ? Math.min(t, v + d) : Math.max(t, v - d);
 const rad = d => d * Math.PI / 180;
+const LIMIT = 4;           // possession limit: a 5th ball is a penalty
+// flywheel speed lost per shot (fraction), and recovery per second of animation time. Estimates, not measured.
+const FW_DROP = {A: {pollen: 0.05, nectar: 0.14}, B: {pollen: 0.05, nectar: 0.06}}, FW_RECOVER = 0.08;
 const SCEN = {
-  pollen: [["pollen", 0], ["pollen", 1.0], ["pollen", 2.0]],
-  nectar: [["nectar", 0], ["nectar", 1.3]],
+  pollen: [["pollen", 0], ["pollen", 1.0], ["pollen", 2.0], ["pollen", 3.0]],
+  nectar: [["nectar", 0], ["nectar", 1.3], ["nectar", 2.6]],
+  five: [["pollen", 0], ["pollen", 1.0], ["pollen", 2.0], ["pollen", 3.0], ["pollen", 4.0]],
   mixed: [["pollen", 0], ["pollen", 1.0], ["nectar", null]]   // nectar arrives once the pollen is queued
 };
 
@@ -340,7 +347,7 @@ function armAngle(k, lift) {
 }
 
 // ---------------------------------------------------------------- UI state
-const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0};
+const ui = {rev: "A", sc: "pollen", speed: 1, angle: 60, vel: 18.5, sweep: false, cut: true, view: "auto", playing: true, shots: 0, rapid: false};
 let R = null, S = null, ready = false;
 const noteEl = document.getElementById("note"), statsEl = document.getElementById("stats"), slowEl = document.getElementById("slowmo");
 const stepEls = [...document.querySelectorAll("#steps span")];
@@ -376,11 +383,15 @@ function resetSim() {
   S = {t: 0, phase: "intake", balls: [], spawn: SCEN[ui.sc].map(([type, at]) => ({type, at})),
        lift: [0, 0, 0], lid: 0, gate: 0, gateTarget: 0, bandR: hoodR(ui.rev, first), bandTarget: hoodR(ui.rev, first),
        lip: ui.sweep ? SWEEP[ui.shots % SWEEP.length] : ui.angle, lipTarget: ui.sweep ? SWEEP[ui.shots % SWEEP.length] : ui.angle,
-       rollerAng: 0, fwAng: 0, fw: 0, cooldown: 0, stillT: 0, slowT: 0, doneT: 0, said: {}, camMode: "mech"};
+       rollerAng: 0, fwAng: 0, fw: 0, fwSpeed: 1, intakeOn: true, cooldown: 0, stillT: 0, slowT: 0, doneT: 0, said: {}, camMode: "mech"};
   narrate("<b>Intake.</b> The robot drives onto the " + (ui.sc === "nectar" ? "nectar" : "pollen") +
-          ". The compliant rollers grab each ball and roll it up the entry lip onto the two rails.", "intake");
+          ". The compliant rollers grab each ball and roll it up the entry lip onto the two rails." +
+          (ui.sc === "five" ? " Five balls are in its path, but it may only hold " + LIMIT + "." : ""), "intake");
   predictKey = "";
 }
+const onboard = () => S.balls.filter(b => (b.state === "roll" && b.x > -1) || b.state === "hood").length;
+// x where a ball on the rails first touches the flywheel
+const captureX = r => FW.x - Math.sqrt((FW_R + r - 0.1) ** 2 - (FW.z - railZ(r)) ** 2);
 function frontBall() {
   let f = null;
   for (const b of S.balls) if (b.state === "roll" && (!f || b.x > f.x)) f = b;
@@ -402,14 +413,24 @@ function step(dt) {
   S.bandR = approach(S.bandR, S.bandTarget, 1.6 * dt);
   S.lip = approach(S.lip, S.lipTarget, 40 * dt);
   const gateOpen = S.gate > 0.85;
+  // ball count: at the limit the intake motor stops (it still runs to feed the flywheel once the gate is open)
+  S.held = onboard();
+  S.intakeOn = S.held < LIMIT || S.gateTarget === 1;
+  // a ball that reaches the mouth while the robot is full bounces off the stopped roller 1 and the 4th ball
+  for (const b of rolling) if (b.x <= -1 && S.held >= LIMIT && !S.intakeOn) {
+    const last = rolling.filter(o => o !== b && o.x > b.x).sort((a, c) => a.x - c.x)[0];
+    if (last && b.x + b.r + last.r + 0.3 > last.x) reject(b);
+  }
+  const hoodEntryBusy = S.balls.some(b => b.state === "hood" && b.th < b.th0 + 50);
   // a ball moves if a roller is actually pressing on it (or the robot is still driving onto it)
   for (const b of rolling) {
-    b.driven = b.x < 0.3 || ROLLERS.some(([ax, az], k) => Math.hypot(b.x - ax, b.z - az - S.lift[k]) < b.r + ROLLER_R);
+    if (b.state !== "roll") continue;
+    b.driven = b.x < 0.3 || S.intakeOn && ROLLERS.some(([ax, az], k) => Math.hypot(b.x - ax, b.z - az - S.lift[k]) < b.r + ROLLER_R);
     // a roller sets the ball to its surface speed; between rollers it coasts along the rails and slows
     b.v = b.driven ? V_IN : Math.max(0, b.v - COAST_DECEL * dt);
     b.nx = b.x + b.v * dt;
   }
-  const order = rolling.slice().sort((a, b) => a.x - b.x);
+  const order = rolling.filter(b => b.state === "roll").sort((a, b) => a.x - b.x);
   for (let i = 0; i + 1 < order.length; i++) {           // a driven ball pushes the ones ahead of it
     const a = order[i], c = order[i + 1], sep = a.r + c.r + 0.08;
     if (a.nx + sep > c.nx) c.nx = a.nx + sep;
@@ -418,15 +439,20 @@ function step(dt) {
     const b = order[i];
     let lim = Infinity;
     if (!gateOpen && b.x <= gateStop(b.r) + 0.01) lim = gateStop(b.r);
+    if (hoodEntryBusy) lim = Math.min(lim, Math.max(b.x, captureX(b.r) - 0.05));   // wait for the ball ahead to clear the hood entry
     if (i + 1 < order.length) lim = Math.min(lim, order[i + 1].nx - (b.r + order[i + 1].r + 0.08));
     b.nx = Math.max(b.x, Math.min(b.nx, lim));
   }
-  for (const b of rolling) {
+  for (const b of order) {
     const dx = b.nx - b.x;
     b.moving = dx > 1e-5;
     b.v = dx / dt;
     b.x = b.nx; b.z = groundZ(b.x, b.r); b.spin += dx / b.r;
-    if (b.x > 10.0 && Math.hypot(b.x - FW.x, b.z - FW.z) <= FW_R + b.r - 0.1) capture(b);
+    if (b.x > 10.0 && !hoodEntryBusy && Math.hypot(b.x - FW.x, b.z - FW.z) <= FW_R + b.r - 0.1) capture(b);
+  }
+  for (const b of S.balls.filter(b => b.state === "reject")) {
+    b.x -= 1.4 * V_IN * dt; b.w += 0.9 * V_IN * dt; b.spin -= 1.4 * V_IN * dt / b.r; b.z = b.r;
+    if ((b.age += dt) > 2.5) { b.state = "gone"; scene.remove(b.holder); }
   }
   // round the hood
   for (const b of S.balls.filter(b => b.state === "hood")) {
@@ -450,9 +476,16 @@ function step(dt) {
       b.vel.y = -b.vel.y * 0.35; b.vel.z *= 0.5;
     }
   }
-  S.rollerAng -= 2 * V_IN * dt / ROLLER_R;
+  if (S.intakeOn) S.rollerAng -= 2 * V_IN * dt / ROLLER_R;
+  S.fwSpeed = approach(S.fwSpeed, 1, FW_RECOVER * dt);
   S.fw = approach(S.fw, S.phase === "fire" || S.balls.some(b => b.state === "hood") ? 1 : 0, dt / 0.8);
-  S.fwAng -= S.fw * rad(HOOD_DEG_S) * 3.25 * dt / 1.0;
+  S.fwAng -= S.fw * S.fwSpeed * rad(HOOD_DEG_S) * 3.25 * dt / 1.0;
+}
+function reject(b) {
+  b.state = "reject"; b.age = 0; b.w = 0;
+  S.said.reject = true;
+  narrate("<b>Full: " + LIMIT + " balls held.</b> The count hit " + LIMIT + " (3 past the entry break-beam + 1 seen at the mouth), so the intake motor stopped. " +
+          "The 5th ball hits the stopped roller 1 and the 4th ball at the mouth and bounces away; it never gets inside the robot. Drivers should still back off so they don't push it around.", "intake", true);
 }
 function capture(b) {
   b.state = "hood";
@@ -460,31 +493,37 @@ function capture(b) {
   b.th0 = b.th;
   b.rad = Math.hypot(b.x - FW.x, b.z - FW.z);
   b.R = ui.rev === "A" ? 4.5 : S.bandR;
-  b.rc = (FW_R + b.R) / 2;
+  b.rc = b.R - b.r;
   b.sq = Math.max(0, 2 * b.r - (b.R - FW_R));
   b.angle = S.lip;
   b.exitT = 180 - b.angle;
-  S.gateTarget = 0;
+  b.exitV = +(ui.vel * S.fwSpeed).toFixed(1);   // leaves at whatever speed the wheel has right now
+  S.fwSpeed -= FW_DROP[ui.rev][b.type];
+  const more = S.balls.some(o => o.state === "roll" && o.type === b.type);
+  if (!ui.rapid || !more) S.gateTarget = 0;
   S.cooldown = 0.8;
   ui.shots++;
   const hard = ui.rev === "A" && b.type === "nectar";
-  narrate("<b>Flywheel + hood.</b> The 4 in flywheel pinches the " + b.type + " against the hood (gap " + (b.R - 2).toFixed(1) +
-          " in, so <b>" + b.sq.toFixed(1) + " in of squeeze</b>) and rolls it round the wrap." +
-          (hard ? " That is almost 3× the pollen squeeze, so the wheel loses more speed on every nectar shot." : ""), "hood", hard);
+  if (hard) narrate("<b>Rev A: 1.1 in of squeeze on a stiff nectar.</b> The ball won't give, so the soft 35A flywheel tread has to flatten 1.1 in, over half its 2 in radius (that's the overlap you see). " +
+                    "Expect a big speed loss on every nectar shot, or a stall. Rev B's servo hood opens the gap to 3.2 in so nectar gets the same 0.4 in as pollen.", "hood", true);
+  else if (!ui.rapid || !S.said.hood) narrate("<b>Flywheel + hood.</b> The " + b.type + " is stiff, so the 4 in flywheel's soft tread takes the <b>" + b.sq.toFixed(1) +
+          " in of squeeze</b> (hood gap " + (b.R - 2).toFixed(1) + " in) and rolls the ball round the wrap.", "hood");
+  S.said.hood = true;
 }
 function launch(b) {
   b.th = b.exitT;
   const x = FW.x + b.rc * Math.sin(rad(b.th)), z = FW.z - b.rc * Math.cos(rad(b.th));
   b.state = "flight"; b.landed = false; b.bounces = 0;
   b.pos.copy(T(x, z));
-  const v = ui.vel * 12;
+  const v = b.exitV * 12;
   b.vel.set(0, v * Math.sin(rad(b.th)), v * Math.cos(rad(b.th)));
   b.trail = [b.pos.clone()];
   b.spin += Math.PI - rad(b.th);           // keep the stripes where they were as the holder un-rotates
-  b.v = ui.vel;
+  b.v = b.exitV;
   S.camMode = "shot";
-  narrate("<b>Launch.</b> The ball leaves where the hood ends, " + Math.round(b.exitT) + "° round the wrap, so it flies off at <b>" +
-          Math.round(b.angle) + "°</b> and " + ui.vel + " ft/s, back over the top of the robot.", "flight");
+  if (!ui.rapid || !S.said.launch) narrate("<b>Launch.</b> The ball leaves where the hood ends, " + Math.round(b.exitT) + "° round the wrap, so it flies off at <b>" +
+          Math.round(b.angle) + "°</b> and " + b.exitV + " ft/s, back over the top of the robot.", "flight");
+  S.said.launch = true;
 }
 const trails = [];
 function land(b) {
@@ -506,13 +545,16 @@ function land(b) {
   while (trails.length > 6) { const o = trails.shift(); o.traverse(c => c.geometry && c.geometry.dispose()); scene.remove(o); o.children[1].removeFromParent(); }
   trails.forEach((t, i) => t.children[0].material.opacity = 0.35 + 0.6 * (i + 1) / trails.length);
   S.lastLand = ft;
+  if (ui.rapid) { if (!S.balls.some(o => o.state === "roll" || o.state === "hood" || (o.state === "flight" && !o.landed)))
+    narrate("<b>Rapid fire done.</b> Each shot pulls the flywheel down a little and it hasn't fully recovered before the next ball, so later balls leave slower and land shorter. " +
+            "Velocity PID on the motor and a heavier flywheel tighten the group. (Speed dip per shot is an estimate.)", "flight"); return; }
   narrate("<b>Landed " + ft.toFixed(1) + " ft</b> from the front bumper (" + Math.round(b.angle) + "° at " + b.v +
           " ft/s). Change the launch angle or exit speed and watch the next shot's dashed path move.", "flight");
 }
 function director(dt) {
   while (S.spawn.length && S.spawn[0].at !== null && S.t >= S.spawn[0].at) S.balls.push(makeBall(S.spawn.shift().type));
   const rolling = S.balls.filter(b => b.state === "roll");
-  const still = rolling.length && rolling.every(b => !b.moving && b.x > 2);
+  const still = rolling.length && rolling.every(b => !b.moving) && !S.balls.some(b => b.state === "reject");
   S.stillT = still ? S.stillT + dt : 0;
   const nectarIn = S.balls.some(b => b.type === "nectar" && b.state === "roll");
   if (ui.rev === "A" && nectarIn && S.lid > 0.3 && !S.said.lid) {
@@ -531,15 +573,19 @@ function director(dt) {
       narrate("<b>Queued.</b> Two pollen wait against the gate flipper, rollers 2 and 3 resting on them. Now a nectar arrives at the intake while we start shooting…", "queue");
     } else {
       S.phase = "fire"; S.cooldown = 1.2;
-      narrate("<b>Queued at the gate.</b> The gate flipper holds the balls while rollers 2 and 3 keep light pressure on them. The flywheel spins up.", "queue");
+      const n = onboard();
+      narrate("<b>Queued at the gate: " + n + " ball" + (n > 1 ? "s" : "") + ".</b> The gate flipper holds them while the rollers keep light pressure on them" +
+              (n === LIMIT ? "; the 4th waits under roller 1 at the mouth. The intake motor stopped at " + LIMIT + " so no 5th ball gets in" : "") +
+              (ui.sc === "nectar" ? ". Only 3 nectar fit, so the limit can't be hit with nectar alone" : "") + ". The flywheel spins up.", "queue");
     }
   }
   // mixed: start shooting the moment the arriving nectar has lifted roller 1 (that is when Rev A jams)
   if (S.phase === "arrive" && (ui.rev === "A" ? S.lid : S.lift[0]) > 0.6) { S.phase = "fire"; S.cooldown = 0; }
   if (S.phase !== "fire") return;
   const f = frontBall();
-  const busy = S.balls.some(b => b.state === "hood" || (b.state === "flight" && !b.landed));
-  if (!f && !busy) { S.phase = "done"; S.doneT = 0; return; }
+  const inAir = S.balls.some(b => b.state === "hood" || (b.state === "flight" && !b.landed));
+  const busy = ui.rapid ? S.balls.some(b => b.state === "hood") : inAir;
+  if (!f && !inAir) { S.phase = "done"; S.doneT = 0; return; }
   if (f && S.gateTarget === 0 && !busy) {
     S.cooldown -= dt;
     if (S.cooldown > 0) return;
@@ -551,8 +597,11 @@ function director(dt) {
     }
     if (Math.abs(S.lipTarget - wantA) > 0.01) S.lipTarget = wantA;
     if (Math.abs(S.bandR - S.bandTarget) < 0.01 && Math.abs(S.lip - S.lipTarget) < 0.2 && f.x >= gateStop(f.r) - 0.4) {
-      S.gateTarget = 1; S.camMode = "mech";
-      narrate("<b>Gate opens.</b> The gate servo swings the flipper out of the channel and roller 3 feeds the front " + f.type + " into the flywheel.", "feed");
+      S.gateTarget = 1;
+      if (!ui.rapid || !S.said.gate) { S.camMode = "mech"; narrate(ui.rapid
+        ? "<b>Rapid fire.</b> The gate opens and stays open: the rollers push the whole queue into the flywheel back to back, one ball as soon as the one ahead clears the hood entry."
+        : "<b>Gate opens.</b> The gate servo swings the flipper out of the channel and roller 3 feeds the front " + f.type + " into the flywheel.", "feed"); }
+      S.said.gate = true;
     }
   }
   if (S.gateTarget === 1 && S.gate > 0.85 && f && !f.driven && Math.max(...S.lift) > 0.3 && !S.said.jam) {
@@ -571,7 +620,7 @@ function predict() {
   const key = [ui.rev, type, angle, ui.vel].join();
   if (key === predictKey) return;
   predictKey = key;
-  const rc = (FW_R + hoodR(ui.rev, type)) / 2, th = rad(180 - angle), r = BALL[type].r;
+  const rc = ballRc(ui.rev, type), th = rad(180 - angle), r = BALL[type].r;
   const p = T(FW.x + rc * Math.sin(th), FW.z - rc * Math.cos(th)), v = new THREE.Vector3(0, Math.sin(th), Math.cos(th)).multiplyScalar(ui.vel * 12);
   predictPts = [p.clone()];
   for (let i = 0; i < 2000 && p.y > r; i++) { v.y -= G / 240; p.addScaledVector(v, 1 / 240); predictPts.push(p.clone()); }
@@ -613,11 +662,11 @@ function applyState() {
     if (b.state === "roll") { h.position.copy(T(b.x, b.z)); h.rotation.x = 0; h.scale.setScalar(1); }
     else if (b.state === "hood") {
       h.position.copy(T(FW.x + b.rad * Math.sin(rad(b.th)), FW.z - b.rad * Math.cos(rad(b.th))));
-      const f = smooth((b.th - b.th0) / 20) * (1 - smooth((b.th - b.exitT + 8) / 8)), k = f * b.sq / (2 * b.r);
       h.rotation.x = Math.PI - rad(b.th);
-      h.scale.set(1 + 0.5 * k, 1 - k, 1 + 0.5 * k);
+      h.scale.setScalar(1);
       if (!b.entered) { b.entered = true; b.spin -= h.rotation.x; }
-    } else { h.position.copy(b.pos); h.rotation.x = 0; h.scale.setScalar(1); }
+    } else if (b.state === "reject") { h.position.copy(T(b.x, b.z, b.w)); }
+    else { h.position.copy(b.pos); h.rotation.x = 0; h.scale.setScalar(1); }
     b.spinner.rotation.x = b.spin;
   }
   slowEl.hidden = !(S.slowT > 0 || S.balls.some(b => b.state === "hood" || b.state === "flight"));
@@ -630,8 +679,10 @@ function applyState() {
   rows.push(["Hood gap", (R.rev === "A" ? "2.5 in (fixed)" : (S.bandR - 2).toFixed(2) + " in (servo)")]);
   const sqA = t => Math.max(0, 2 * BALL[t].r - (hoodR(R.rev, t) - 2)).toFixed(1);
   rows.push(["Squeeze P / N", sqA("pollen") + " / " + sqA("nectar") + " in"]);
+  rows.push(["Balls held", (S.held || 0) + " / " + LIMIT + (S.intakeOn ? "" : " · intake off")]);
   rows.push(["Gate", S.gate > 0.85 ? "open" : S.gate < 0.05 ? "closed" : "moving"]);
   rows.push(["Launch", Math.round(S.lip) + "° · " + ui.vel + " ft/s"]);
+  rows.push(["Flywheel speed", Math.round(S.fwSpeed * 100) + "%"]);
   if (S.lastLand != null) rows.push(["Last landing", S.lastLand.toFixed(1) + " ft"]);
   const html = rows.map(([a, b]) => "<div><span>" + a + "</span>" + b + "</div>").join("");
   if (html !== statsEl.innerHTML) statsEl.innerHTML = html;
@@ -720,11 +771,19 @@ angleIn.addEventListener("input", () => {
 });
 const velIn = document.getElementById("vel"), velOut = document.getElementById("velOut");
 velIn.addEventListener("input", () => { ui.vel = +velIn.value; velOut.textContent = ui.vel + " ft/s"; });
+const rapidBtn = document.getElementById("rapid");
+rapidBtn.addEventListener("click", () => {
+  ui.rapid = !ui.rapid;
+  rapidBtn.setAttribute("aria-pressed", ui.rapid);
+  if (ui.rapid && ui.sweep) { ui.sweep = false; sweepBtn.setAttribute("aria-pressed", "false"); }
+  if (ready) resetSim();
+});
 const sweepBtn = document.getElementById("sweep");
 sweepBtn.addEventListener("click", () => {
   ui.sweep = !ui.sweep;
   ui.shots = 0;
   sweepBtn.setAttribute("aria-pressed", ui.sweep);
+  if (ui.sweep && ui.rapid) { ui.rapid = false; rapidBtn.setAttribute("aria-pressed", "false"); }
   if (ui.sweep && ready) { if (ui.sc === "nectar") { ui.sc = "pollen"; setPressed("sc", "pollen"); } resetSim(); }
 });
 const cutBtn = document.getElementById("cut");
