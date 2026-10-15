@@ -1,5 +1,5 @@
 {
   "name": "Draftpad design",
-  "code": "sheet({title:'Spindexer, 4 pockets', units:'mm'})\n// everything on the plate is a child of this part, so one rotation turns it all\nlet sp = part({pivot:[0,0,0]})\ncyl(0,0,0, 125,6, {axis:'z', fill:C.alu, part:sp})            // \u00d8250 plate\nfor(let i=0;i<4;i++){\n  let a=i*Math.PI/2+Math.PI/4, x=74.8*Math.cos(a), y=74.8*Math.sin(a)\n  cyl(x,y,6, 30,1, {axis:'z', fill:C.dark, part:sp})           // \u00d860 cup at R 74.8\n  box(0,-2,6, 120,4,66, {fill:C.alu, pivot:[0,0,6], part:sp}).rot[2]=i*90\n}\nlet q=74.8*Math.SQRT1_2\nsphere(q,-q,6+45.5, 45.5, {fill:C.red, part:sp})              // nectar, front pocket\nsphere(q,q,6+35.5, 35.5, {fill:C.yellow, part:sp})            // pollen\ncyl(0,0,-20, 16,20, {axis:'z', fill:C.dark})                   // servo stub\ndim([-125,0,0],[125,0,0],{off:120,text:'\u00d8250 (9.85 in)'})\ndim([0,-125,6],[0,-125,72],{off:60})\nleader([-q,-q,8],'\u00d860 cup',-50,-60)\nconst rpm=40\nanimate(t => { sp.rot[2] = t*rpm*6 })   // 6 deg per second per rpm",
-  "savedAt": "2026-10-15T12:00:00.000Z"
+  "code": "sheet({title:'Stinger v2', units:'in'})\n\n// the 18 x 18 x 18 sizing box: corner at x=0, y=0, z=0; 18 along x, 18 along y, 18 tall\nbox(0,0,0, 18,18,18, {fill:C.white, alpha:0.15})",
+  "savedAt": "2026-10-15T16:14:48.291Z"
 }
