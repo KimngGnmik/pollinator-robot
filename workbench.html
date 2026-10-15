@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style></head><body>
 <title>Pollinator Workbench</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -11,7 +10,7 @@
   --bg: #eff1ec; --panel: #ffffff; --raise: #f6f7f3; --line: #d6dacf; --fg: #1c201a; --muted: #5f665a;
   --accent: #e2b714; --accent-ink: #231d00; --accent-soft: #f6e7a6; --user: #3f7fd9;
   --stage: #e3e7df; --grid-a: #b9bfb2; --grid-b: #cfd4c8;
-  --ok: #2f8a52; --bad: #c73a3a; --code-bg: #fafbf8;
+  --ok: #2f8a52; --bad: #c73a3a; --warn: #a35f00; --code-bg: #fafbf8;
   --f-ui: "Barlow", "Helvetica Neue", Arial, sans-serif;
   --f-label: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
   --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -20,11 +19,11 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #14161a; --panel: #1b1e23; --raise: #22262c; --line: #30353d; --fg: #e7e8e3; --muted: #9aa094;
   --accent: #f0c419; --accent-ink: #1d1700; --accent-soft: #4a3d08; --user: #5b97ec;
-  --stage: #0f1114; --grid-a: #3a4048; --grid-b: #23272d; --ok: #4fbf7a; --bad: #ef6161; --code-bg: #16191d; color-scheme: dark } }
+  --stage: #0f1114; --grid-a: #3a4048; --grid-b: #23272d; --ok: #4fbf7a; --bad: #ef6161; --warn: #f0a33a; --code-bg: #16191d; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #14161a; --panel: #1b1e23; --raise: #22262c; --line: #30353d; --fg: #e7e8e3; --muted: #9aa094;
   --accent: #f0c419; --accent-ink: #1d1700; --accent-soft: #4a3d08; --user: #5b97ec;
-  --stage: #0f1114; --grid-a: #3a4048; --grid-b: #23272d; --ok: #4fbf7a; --bad: #ef6161; --code-bg: #16191d; color-scheme: dark }
+  --stage: #0f1114; --grid-a: #3a4048; --grid-b: #23272d; --ok: #4fbf7a; --bad: #ef6161; --warn: #f0a33a; --code-bg: #16191d; color-scheme: dark }
 
 [hidden] { display: none !important; }
 html, body { height: 100%; }
@@ -39,6 +38,15 @@ button { cursor: pointer; }
 .brand { font: 700 20px/1 var(--f-label); letter-spacing: .02em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; margin-right: 6px; }
 .brand i { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
 .spacer { flex: 1; }
+.chip { border: 1px solid currentColor; border-radius: 999px; padding: 4px 10px; font: 600 12px/1 var(--f-label); letter-spacing: .06em; text-transform: uppercase; background: none; min-height: 0; }
+.chip.ok { color: var(--ok); }
+.chip.dirty { color: var(--warn); }
+.notice { border: 1px solid var(--warn); color: var(--fg); border-radius: var(--r); padding: 10px; display: grid; gap: 8px; font-size: 14px; }
+.dlg h4 { margin: 4px 0 0; }
+.dlg details summary { cursor: pointer; font-weight: 600; }
+.dlg details ol { margin: 8px 0; padding-left: 20px; color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
+.dlg input[type=password] { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); font-family: var(--f-mono); }
+.proj.current { border-color: var(--ok); }
 .links { display: flex; gap: 4px; flex-wrap: wrap; }
 .links a { color: var(--muted); text-decoration: none; padding: 7px 9px; border-radius: var(--r); font-weight: 500; }
 .links a:hover { color: var(--fg); background: var(--raise); }
@@ -165,7 +173,8 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
     </div>
     <div class="spacer"></div>
     <nav class="links" aria-label="Other pages"><a href="./">3D viewer</a><a href="animate.html">Animation</a><a href="draftpad.html">Draftpad</a></nav>
-    <button class="btn" id="projBtn">Projects</button>
+    <button class="chip ok" id="saveChip" type="button">Saved</button>
+    <button class="btn primary" id="designBtn">Save</button>
     <button class="btn" id="exportBtn">Export</button>
   </header>
 
@@ -221,7 +230,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
             <label class="chk"><input type="checkbox" id="autoIn" checked>Auto-run</label>
             <button class="btn small" id="undoBtn">Undo</button>
             <div class="spacer"></div>
-            <button class="btn small" id="resetBtn">Reset to example</button>
+            <button class="btn small" id="resetBtn">Restore default</button>
           </div>
           <div>
             <div class="snips" id="snips"></div>
@@ -243,19 +252,35 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
   </div>
 </div>
 
-<dialog id="projDlg"><form class="dlg" method="dialog" id="projForm">
-  <h3>Projects</h3>
-  <p id="projNote">Projects are saved in this browser on this device. To send one to Claude, press Download and share the .json file, or copy the code.</p>
-  <div class="row" style="justify-content:stretch"><input type="text" id="projName" placeholder="Project name" aria-label="Project name" style="flex:1"><button type="button" class="btn primary" id="projSave">Save</button></div>
-  <div class="projlist" id="projList"></div>
-  <div class="row"><label class="btn" style="display:inline-flex;align-items:center">Import .json<input type="file" id="importIn" accept=".json,application/json" hidden></label><span class="spacer"></span><button class="btn">Close</button></div>
+<dialog id="designDlg"><form class="dlg" method="dialog">
+  <h3>Shared design</h3>
+  <p id="designState">Loading…</p>
+  <div class="row" style="justify-content:stretch"><input type="text" id="saveNote" placeholder="What changed? e.g. raised roller 2" aria-label="What changed" style="flex:1"><button type="button" class="btn primary" id="saveBtn">Save for everyone</button></div>
+  <div class="notice" id="conflict" hidden><span id="conflictText"></span><div class="row" style="justify-content:flex-start"><button type="button" class="btn small" id="saveForce">Save mine anyway</button><button type="button" class="btn small" id="loadTheirs">Load theirs</button></div></div>
+  <div class="row" style="justify-content:flex-start">
+    <button type="button" class="btn" id="discardBtn">Discard my changes</button>
+    <button type="button" class="btn" id="defaultBtn">Restore default</button>
+    <label class="btn" style="display:inline-flex;align-items:center">Import .json<input type="file" id="importIn" accept=".json,application/json" hidden></label>
+  </div>
+  <h4 class="lbl">Versions</h4>
+  <div class="projlist" id="versionList"><p>Loading…</p></div>
+  <details id="tokenBox"><summary id="tokenSum">GitHub access (needed to save)</summary>
+    <ol>
+      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a></li>
+      <li>Repository access: <b>Only select repositories</b> → <b>pollinator-robot</b></li>
+      <li>Permissions → Repository → <b>Contents: Read and write</b>, then Generate and copy it</li>
+    </ol>
+    <p>Teammates you add as collaborators can use a classic token with the <b>public_repo</b> scope. The token stays in this browser only.</p>
+    <div class="row" style="justify-content:stretch;margin-top:8px"><input type="password" id="tokenIn" placeholder="github_pat_…" aria-label="GitHub token" autocomplete="off"><button type="button" class="btn" id="tokenSave">Use token</button><button type="button" class="btn danger" id="tokenForget">Forget</button></div>
+  </details>
+  <div class="row"><button class="btn">Close</button></div>
 </form></dialog>
 
 <dialog id="expDlg"><form class="dlg" method="dialog">
   <h3>Export</h3>
   <p id="expNote">Download your work to keep a copy or open it in other 3D apps.</p>
   <div class="projlist">
-    <div class="proj"><div><b>Project code</b><small>.json · code + rev, to reopen or send to Claude</small></div><button type="button" class="btn small" id="expJson">Download</button></div>
+    <div class="proj"><div><b>Project code</b><small>.json · code + rev, to keep a copy or share</small></div><button type="button" class="btn small" id="expJson">Download</button></div>
     <div class="proj"><div><b>Robot + your parts</b><small>.glb · everything visible now</small></div><button type="button" class="btn small" id="expAll">Download</button></div>
     <div class="proj"><div><b>Only your parts</b><small>.glb · for Blender, Onshape, slicers</small></div><button type="button" class="btn small" id="expMine">Download</button></div>
   </div>
@@ -627,7 +652,7 @@ function run() {
   if (ok) { errLine = null; setStatus(`Ran OK · ${userParts.length} part${userParts.length === 1 ? "" : "s"} of yours · ${rev === "none" ? "blank, no robot" : "Rev " + rev}`, "ok"); }
   gutter(); renderConsole(); renderParts();
   if (sel && !allParts().includes(sel)) select(null);
-  store.set("pw-code", src);
+  saveDraft();
 }
 
 // ------------------------------------------------------------ editor
@@ -649,7 +674,7 @@ box("Front guard (example)", {x: [-0.25, 0], w: [-7, 7], z: [1.5, 3.5]}, "#3f7fd
 hive({distance: 60});
 shoot({ball: "pollen", speed: 24, angle: 60});
 `;
-code.value = store.get("pw-code") ?? EXAMPLE;
+code.value = EXAMPLE;
 const undoStack = [];
 function setCode(next, why) {
   undoStack.push(code.value); if (undoStack.length > 100) undoStack.shift();
@@ -678,7 +703,7 @@ function appendLine(line) {
 }
 $("runBtn").onclick = run;
 $("undoBtn").onclick = () => { if (!undoStack.length) return toast("Nothing to undo"); code.value = undoStack.pop(); gutter(); run(); };
-$("resetBtn").onclick = () => setCode(EXAMPLE, "Example restored. Undo brings your code back.");
+$("resetBtn").onclick = () => restoreDefault();
 function setStatus(t, cls) { const s = $("status"); s.textContent = t; s.className = "status " + (cls || ""); }
 $("status").onclick = () => {
   if (!errLine) return;
@@ -1156,53 +1181,163 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
 });
 
-// ------------------------------------------------------------ projects (saved on this device) and export (file downloads)
-const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "untitled";
-const base = () => slug($("projName").value || "pollinator");
+// ------------------------------------------------------------ the shared design (saved in the GitHub repo) and export
+// designs/current.json  the design everyone opens; every Save is a commit, so every version is kept
+// designs/default.json  the frozen baseline; this page never writes it, "Restore default" loads it
+const REPO = "KimngGnmik/pollinator-robot", GH = `https://api.github.com/repos/${REPO}`;
+const CURRENT = "designs/current.json", DEFAULT = "designs/default.json";
+let shared = null;                                     // {rev, code, sha, savedAt}
+const token = () => store.get("pw-gh-token") || "";
+const ghHeaders = () => { const h = {Accept: "application/vnd.github+json"}; if (token()) h.Authorization = "Bearer " + token(); return h; };
+const fromB64 = b => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\s/g, "")), c => c.charCodeAt(0)));
+function toB64(str) {
+  const bytes = new TextEncoder().encode(str); let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function ghFile(path, ref = "main") {
+  const r = await fetch(`${GH}/contents/${path}?ref=${ref}`, {headers: ghHeaders(), cache: "no-store"});
+  if (!r.ok) throw Object.assign(new Error(r.status === 404 ? "not found" : r.status === 403 || r.status === 429 ? "GitHub is rate-limiting this network; try again in a few minutes" : `GitHub error ${r.status}`), {status: r.status});
+  const j = await r.json();
+  return {sha: j.sha, data: JSON.parse(fromB64(j.content))};
+}
+async function readDesign(path, ref) {                 // GitHub first (always fresh), the site's own copy as a fallback
+  try { const f = await ghFile(path, ref); return {...f.data, sha: f.sha}; }
+  catch (e) {
+    if (ref) throw e;
+    const r = await fetch(path, {cache: "no-store"}); if (!r.ok) throw e;
+    return {...(await r.json()), sha: null};
+  }
+}
+const isDirty = () => !shared || code.value !== shared.code || rev !== shared.rev;
+function saveDraft() {
+  if (!shared) return;
+  store.set("pw-draft", isDirty() ? JSON.stringify({code: code.value, rev, base: shared.sha}) : "");
+  updateSaveState();
+}
+function readDraft() { try { const d = JSON.parse(store.get("pw-draft") || "null"); return d && typeof d.code === "string" ? d : null; } catch { return null; } }
+function updateSaveState() {
+  const chip = $("saveChip"), dirty = isDirty();
+  chip.textContent = !shared ? "Offline" : dirty ? "Unsaved changes" : "Saved";
+  chip.className = "chip " + (dirty ? "dirty" : "ok");
+  $("designState").textContent = !shared ? "Couldn't reach the shared design. Your edits are kept on this device."
+    : dirty ? "You have changes on this device that nobody else sees yet. Save them for everyone, or discard them."
+    : `This is the shared design${shared.savedAt ? ", saved " + new Date(shared.savedAt).toLocaleString() : ""}.`;
+}
+async function boot() {
+  $("loading").textContent = "Loading the shared design…";
+  try { shared = await readDesign(CURRENT); } catch { shared = null; }
+  const draft = readDraft();
+  const src = draft && (!shared || draft.code !== shared.code || draft.rev !== shared.rev) ? draft : shared;
+  code.value = src ? src.code : EXAMPLE;
+  rev = (src && src.rev) || rev;
+  gutter(); loadRev(rev);
+  if (src === draft && draft) {
+    setTimeout(() => toast(shared && draft.base && shared.sha && draft.base !== shared.sha
+      ? "Someone saved a newer shared design since your unsaved changes. Open Save to compare." : "Your unsaved changes from last time are back."), 800);
+  }
+}
+function loadDesign(d, msg) {
+  undoStack.push(code.value);
+  code.value = d.code || ""; gutter();
+  if (d.rev && d.rev !== rev && ["A", "B", "C", "none"].includes(d.rev)) loadRev(d.rev); else run();
+  if (msg) toast(msg);
+}
+function openDesign(focusToken) {
+  $("conflict").hidden = true;
+  updateSaveState(); listVersions();
+  $("tokenSum").textContent = token() ? "GitHub access: set on this browser" : "GitHub access (needed to save)";
+  $("tokenBox").open = !!focusToken || !token();
+  if (!$("designDlg").open) $("designDlg").showModal();
+}
+$("designBtn").onclick = () => openDesign();
+$("saveChip").onclick = () => openDesign();
+$("tokenSave").onclick = () => {
+  const t = $("tokenIn").value.trim(); if (!t) return toast("Paste a token first");
+  store.set("pw-gh-token", t); $("tokenIn").value = ""; $("tokenBox").open = false;
+  $("tokenSum").textContent = "GitHub access: set on this browser"; toast("Token saved in this browser");
+};
+$("tokenForget").onclick = () => { store.set("pw-gh-token", ""); $("tokenSum").textContent = "GitHub access (needed to save)"; toast("Token removed from this browser"); };
+
+async function saveShared(force) {
+  if (!token()) { openDesign(true); return toast("Add a GitHub token to save for everyone"); }
+  $("saveBtn").disabled = true;
+  try {
+    let latest = null;
+    try { latest = await ghFile(CURRENT); } catch (e) { if (e.status !== 404) throw e; }
+    if (!force && latest && shared && shared.sha && latest.sha !== shared.sha) {
+      $("conflictText").textContent = "Someone saved a newer version while you were editing. Saving yours replaces it, but theirs stays in Versions.";
+      $("conflict").hidden = false; return;
+    }
+    const note = $("saveNote").value.trim() || "Update design";
+    const design = {name: "Pollinator design", rev, code: code.value, savedAt: new Date().toISOString()};
+    const body = {message: note, content: toB64(JSON.stringify(design, null, 2) + "\n"), branch: "main"};
+    if (latest) body.sha = latest.sha;
+    const r = await fetch(`${GH}/contents/${CURRENT}`, {method: "PUT", headers: {...ghHeaders(), "Content-Type": "application/json"}, body: JSON.stringify(body)});
+    if (r.status === 401) throw new Error("GitHub didn't accept the token. Check it, or make a new one.");
+    if (r.status === 403 || r.status === 404) throw new Error("That token can't write to pollinator-robot. It needs Contents: Read and write on this repository.");
+    if (r.status === 409 || r.status === 422) throw new Error("Someone saved at the same moment. Press Save again.");
+    if (!r.ok) throw new Error(`GitHub error ${r.status}`);
+    const j = await r.json();
+    shared = {...design, sha: j.content.sha};
+    $("saveNote").value = ""; $("conflict").hidden = true;
+    saveDraft(); listVersions();
+    toast("Saved for everyone");
+  } catch (e) { toast("Couldn't save: " + e.message); }
+  finally { $("saveBtn").disabled = false; }
+}
+$("saveBtn").onclick = () => saveShared(false);
+$("saveForce").onclick = () => saveShared(true);
+$("loadTheirs").onclick = async () => {
+  try { shared = await readDesign(CURRENT); $("conflict").hidden = true; loadDesign(shared, "Loaded the newest shared design"); }
+  catch (e) { toast("Couldn't load it: " + e.message); }
+};
+$("discardBtn").onclick = async () => {
+  try { shared = await readDesign(CURRENT); } catch {}
+  if (!shared) return toast("Can't reach the shared design right now");
+  loadDesign(shared, "Back to the shared design. Undo brings your changes back.");
+};
+async function restoreDefault() {
+  try {
+    const d = await readDesign(DEFAULT);
+    loadDesign(d, "Default loaded. Press Save to make it the shared design again.");
+  } catch (e) { setCode(EXAMPLE, "Couldn't reach the saved default, so the built-in example is loaded."); }
+}
+$("defaultBtn").onclick = () => { $("designDlg").close(); restoreDefault(); };
+async function listVersions() {
+  const el = $("versionList");
+  try {
+    const r = await fetch(`${GH}/commits?path=${CURRENT}&per_page=30`, {headers: ghHeaders(), cache: "no-store"});
+    if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? "GitHub is rate-limiting this network; try again in a few minutes" : `GitHub error ${r.status}`);
+    const list = await r.json();
+    el.innerHTML = list.map((c, i) => `<div class="proj${i === 0 ? " current" : ""}"><div><b>${esc(c.commit.message.split("\n")[0])}</b>
+        <small>${i === 0 ? "current · " : ""}${esc(c.commit.author.name)} · ${new Date(c.commit.author.date).toLocaleString()}</small></div>
+        <button type="button" class="btn small" data-ver="${c.sha}">Load</button></div>`).join("")
+      + `<div class="proj"><div><b>Default</b><small>the frozen starting point, never overwritten</small></div><button type="button" class="btn small" data-def="1">Load</button></div>`;
+  } catch (e) { el.innerHTML = `<p>${esc(e.message)}</p>`; }
+}
+$("versionList").onclick = async e => {
+  const v = e.target.closest("[data-ver]"), d = e.target.closest("[data-def]");
+  if (d) { $("designDlg").close(); return restoreDefault(); }
+  if (!v) return;
+  try { const f = await readDesign(CURRENT, v.dataset.ver); $("designDlg").close(); loadDesign(f, "Older version loaded. Save to make it the shared design."); }
+  catch (err) { toast("Couldn't load that version: " + err.message); }
+};
+$("importIn").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try { const p = JSON.parse(await f.text()); if (typeof p.code !== "string") throw new Error("that file has no code in it"); $("designDlg").close(); loadDesign(p, "Imported. Save to share it."); }
+  catch (err) { toast("Couldn't import: " + err.message); }
+};
+
+// ---- export (file downloads)
+const base = () => "pollinator-design";
 function downloadBlob(blob, name) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   toast("Downloaded " + name);
 }
-const loadProjects = () => { try { return JSON.parse(store.get("pw-projects") || "{}"); } catch { return {}; } };
-const saveProjects = o => store.set("pw-projects", JSON.stringify(o));
-const projJson = p => JSON.stringify({name: p.name, rev: p.rev, code: p.code, units: "inches; x back from front bumper, w right of centre, z up"}, null, 2);
-$("projName").value = store.get("pw-name") || "My robot fixes";
-$("projBtn").onclick = () => { renderProjects(); $("projDlg").showModal(); };
 $("exportBtn").onclick = () => $("expDlg").showModal();
-let confirmDel = null;
-function renderProjects() {
-  const ps = Object.entries(loadProjects()).map(([id, p]) => ({id, ...p})).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  $("projList").innerHTML = ps.length ? ps.map(p => `<div class="proj"><div><b>${esc(p.name)}</b><small>Rev ${esc(p.rev)} · ${p.updated ? new Date(p.updated).toLocaleString() : ""} · ${String(p.code || "").split("\n").length} lines</small></div>
-      <button type="button" class="btn small" data-open="${esc(p.id)}">Open</button><button type="button" class="btn small" data-dl="${esc(p.id)}">Download</button><button type="button" class="btn small danger" data-del="${esc(p.id)}">${confirmDel === p.id ? "Confirm" : "Delete"}</button></div>`).join("")
-    : `<p>No saved projects yet. Name your work above and press Save.</p>`;
-}
-function openProject(p) {
-  $("projName").value = p.name || "Imported"; store.set("pw-name", $("projName").value);
-  undoStack.push(code.value); code.value = p.code || ""; gutter();
-  if (p.rev && p.rev !== rev && ["A", "B", "C", "none"].includes(p.rev)) loadRev(p.rev); else run();
-  toast(`Opened "${$("projName").value}"`);
-}
-$("projSave").onclick = () => {
-  const name = $("projName").value.trim() || "Untitled", ps = loadProjects(); store.set("pw-name", name);
-  ps[slug(name)] = {name, rev, code: code.value, updated: Date.now()}; saveProjects(ps); renderProjects();
-  toast(`Saved "${name}" on this device`);
-};
-$("projList").onclick = e => {
-  const ps = loadProjects(), o = e.target.closest("[data-open]"), dlb = e.target.closest("[data-dl]"), d = e.target.closest("[data-del]");
-  if (o) { $("projDlg").close(); openProject(ps[o.dataset.open]); }
-  if (dlb) { const p = ps[dlb.dataset.dl]; downloadBlob(new Blob([projJson(p)], {type: "application/json"}), slug(p.name) + ".json"); }
-  if (d) {
-    if (confirmDel !== d.dataset.del) { confirmDel = d.dataset.del; return renderProjects(); }
-    confirmDel = null; delete ps[d.dataset.del]; saveProjects(ps); renderProjects(); toast("Deleted");
-  }
-};
-$("importIn").onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  try { const p = JSON.parse(await f.text()); if (typeof p.code !== "string") throw new Error("that file has no code in it"); $("projDlg").close(); openProject(p); }
-  catch (err) { toast("Couldn't import: " + err.message); }
-};
-$("expJson").onclick = () => downloadBlob(new Blob([projJson({name: $("projName").value, rev, code: code.value})], {type: "application/json"}), base() + ".json");
+$("expJson").onclick = () => downloadBlob(new Blob([JSON.stringify({name: "Pollinator design", rev, code: code.value, units: "inches; x back from front bumper, w right of centre, z up"}, null, 2)], {type: "application/json"}), base() + ".json");
 function exportGlb(objs, file) {
   robotRoot.traverse(o => { if (o.isMesh) o.material.clippingPlanes = null; });
   new GLTFExporter().parse(objs, buf => downloadBlob(new Blob([buf], {type: "model/gltf-binary"}), file), e => toast("Export failed: " + e.message), {binary: true, onlyVisible: true});
@@ -1215,7 +1350,7 @@ function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false
 
 // ------------------------------------------------------------ start
 resize(); gutter(); renderConsole();
-loadRev(rev);
+boot();
 </script>
 
 </body></html>

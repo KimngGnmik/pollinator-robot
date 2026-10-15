@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style></head><body>
 <title>Draftpad</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="shared-save.js"></script>
 <style>
 /* Layout: a drafting sheet (3D stage or schematic) with a code margin beside it; stacks on narrow screens. */
 :root{
@@ -29,7 +29,7 @@ body{margin:0;background:var(--paper2);color:var(--ink);font-family:var(--sans);
 header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
 header h1{font:500 15px var(--mono);letter-spacing:.08em;text-transform:uppercase;margin:0}
 header .sub{color:var(--ink2);font-size:13px}
-header .nav{margin-left:auto;display:flex;gap:12px;font-size:13px}header .nav a{color:var(--accent2);text-decoration:none}header .nav a:hover{text-decoration:underline}
+header .nav{margin-left:auto;display:flex;gap:12px;font-size:13px;align-items:center;flex-wrap:wrap}header .nav a{color:var(--accent2);text-decoration:none}header .nav a:hover{text-decoration:underline}
 .main{display:flex;gap:10px;flex:1;min-height:0}
 .pane{background:var(--panel);border:1px solid var(--rule);border-radius:4px;min-width:0;display:flex;flex-direction:column;min-height:0}
 .code{flex:0 0 36%;max-width:560px}
@@ -544,6 +544,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(T)t
 T=threeInit();if(!T){$('mode').value='schem';setMode('schem')}
 let saved=null;try{saved=localStorage.getItem('draftpad.src')}catch(e){}
 $('src').value=saved||EX['Spindexer at 40 rpm'];run(true);
+// shared design saved in the GitHub repo (Save button in the header); this device's unsaved edits stay in draftpad.src
+if(window.SharedSave)SharedSave({repo:'KimngGnmik/pollinator-robot',current:'designs/draftpad.json',def:'designs/draftpad-default.json',label:'Draftpad design',
+ container:document.querySelector('header .nav'),get:()=>$('src').value,set:c=>{$('src').value=c;run(true)},draftKey:'draftpad.src'});
 requestAnimationFrame(tick);
 })();
 </script>
