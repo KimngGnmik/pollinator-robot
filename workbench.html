@@ -158,7 +158,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
   <header class="bar">
     <div class="brand"><i></i>Pollinator Workbench</div>
     <div class="seg" id="revSeg" role="group" aria-label="Robot revision">
-      <button data-rev="A">Rev A</button><button data-rev="B">Rev B</button><button data-rev="C" aria-pressed="true">Rev C</button>
+      <button data-rev="A">Rev A</button><button data-rev="B">Rev B</button><button data-rev="C" aria-pressed="true">Rev C</button><button data-rev="none">Blank</button>
     </div>
     <div class="seg" id="modeSeg" role="group" aria-label="Mode">
       <button data-mode="view" aria-pressed="true">3D view</button><button data-mode="draw">Draw parts</button><button data-mode="markup">Markup</button>
@@ -379,6 +379,7 @@ async function loadGlb(path, onProgress) {
 async function loadRev(r) {
   $("loading").textContent = `Loading Rev ${r}…`; $("loading").hidden = false;
   try {
+    if (r === "none") gltfCache.none = gltfCache.none || {scene: new THREE.Group(), parts: []};
     if (!gltfCache[r]) {
       const g = await loadGlb(`glb/rev${r}_anim.glb`, f => $("loading").textContent = `Loading Rev ${r}… ${Math.round(f * 100)}%`);
       const names = g.parser.json.nodes;
@@ -449,8 +450,16 @@ function handle(recs, label) {
       recs.forEach(r => rotAbout(r.obj, c, ax, deg * Math.PI / 180)); return h;
     },
     spin(rpm, axis = "w") {
-      const ax = axisVec(axis), items = recs.map(r => ({o: r.obj, c: boxOf([r]).getCenter(new THREE.Vector3())}));
-      frameFns.push((t, dt) => { const a = rpm / 60 * 2 * Math.PI * dt; items.forEach(i => rotAbout(i.o, i.c, ax, a)); });
+      // axle centre and direction are kept in the parent's frame, so a roller on a lifting arm still spins on its axle
+      const items = recs.map(r => {
+        const o = r.obj; o.parent.updateWorldMatrix(true, false);
+        const inv = M4().copy(o.parent.matrixWorld).invert();
+        return {o, c: boxOf([r]).getCenter(new THREE.Vector3()).applyMatrix4(inv), a: axisVec(axis).transformDirection(inv)};
+      });
+      frameFns.push((t, dt) => {
+        const a = rpm / 60 * 2 * Math.PI * dt;
+        items.forEach(i => { i.o.parent.updateWorldMatrix(true, false); const pw = i.o.parent.matrixWorld; rotAbout(i.o, i.c.clone().applyMatrix4(pw), i.a.clone().transformDirection(pw), a); });
+      });
       return h;
     },
     size() { const s = boxOf(recs).getSize(new THREE.Vector3()); return {x: +s.z.toFixed(3), w: +s.x.toFixed(3), z: +s.y.toFixed(3)}; },
@@ -615,7 +624,7 @@ function run() {
     setStatus(`${errLine ? "Line " + errLine + ": " : ""}${e.message}`, "bad");
     logLines.push({t: (errLine ? `line ${errLine}: ` : "") + e.message, c: "e"});
   }
-  if (ok) { errLine = null; setStatus(`Ran OK · ${userParts.length} part${userParts.length === 1 ? "" : "s"} of yours · Rev ${rev}`, "ok"); }
+  if (ok) { errLine = null; setStatus(`Ran OK · ${userParts.length} part${userParts.length === 1 ? "" : "s"} of yours · ${rev === "none" ? "blank, no robot" : "Rev " + rev}`, "ok"); }
   gutter(); renderConsole(); renderParts();
   if (sel && !allParts().includes(sel)) select(null);
   store.set("pw-code", src);
@@ -738,7 +747,7 @@ function renderParts() {
   const m = r => !q || r.name.toLowerCase().includes(q) || (r.tag || "").includes(q);
   const u = userParts.filter(m), rb = robotParts.filter(m);
   $("partCount").textContent = robotParts.length + userParts.length;
-  $("plist").innerHTML = (u.length ? `<h5>Your parts · ${u.length}</h5>` + u.map(row).join("") : "") + `<h5>Rev ${rev} robot · ${rb.length}</h5>` + rb.map(row).join("");
+  $("plist").innerHTML = (u.length ? `<h5>Your parts · ${u.length}</h5>` + u.map(row).join("") : "") + (rev === "none" ? "" : `<h5>Rev ${rev} robot · ${rb.length}</h5>` + rb.map(row).join(""));
 }
 $("pSearch").oninput = renderParts;
 const recFromRow = el => { const i = el.dataset.i; return (i[0] === "u" ? userParts : robotParts)[+i.slice(1)]; };
@@ -1171,7 +1180,7 @@ function renderProjects() {
 function openProject(p) {
   $("projName").value = p.name || "Imported"; store.set("pw-name", $("projName").value);
   undoStack.push(code.value); code.value = p.code || ""; gutter();
-  if (p.rev && p.rev !== rev && "ABC".includes(p.rev)) loadRev(p.rev); else run();
+  if (p.rev && p.rev !== rev && ["A", "B", "C", "none"].includes(p.rev)) loadRev(p.rev); else run();
   toast(`Opened "${$("projName").value}"`);
 }
 $("projSave").onclick = () => {
