@@ -1,5 +1,5 @@
 {
-  "name": "Pollinator design",
+  "name": "Main design",
   "rev": "C",
   "code": "// Pollinator Workbench: your code runs on top of the CAD robot.\n// Inches.  x = back from the front bumper (0 to 17.5)\n//          w = right of centre (left is negative)\n//          z = up from the tiles\n// Tap a part in 3D to see its name, or use Draw to sketch new parts with your pencil.\n\n// Spin the parts the CAD export tagged as moving\nspin(tagged(\"flywheel\"), 400);\nspin(tagged(\"intake\"), 120);\n\n// Example part: a front guard plate (delete me)\nbox(\"Front guard (example)\", {x: [-0.25, 0], w: [-7, 7], z: [1.5, 3.5]}, \"#3f7fd9\");\n\n// Example sim: the simplified hive 60 in away, and one pollen shot\nhive({distance: 60});\nshoot({ball: \"pollen\", speed: 24, angle: 60});\n",
   "savedAt": "2026-10-15T12:00:00.000Z"

@@ -1,5 +1,5 @@
 {
-  "name": "Draftpad design",
+  "name": "Stinger v2",
   "code": "sheet({title:'Stinger v2', units:'in'})\n\n// the 18 x 18 x 18 sizing box: corner at x=0, y=0, z=0; 18 along x, 18 along y, 18 tall\nbox(0,0,0, 18,18,18, {fill:C.white, alpha:0.15})",
   "savedAt": "2026-10-15T16:14:48.291Z"
 }

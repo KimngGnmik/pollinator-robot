@@ -27,6 +27,7 @@
 
 [hidden] { display: none !important; }
 html, body { height: 100%; }
+body { --ss-bg: var(--panel); --ss-fg: var(--fg); --ss-line: var(--line); --ss-accent: var(--accent); --ss-accent-ink: var(--accent-ink); --ss-muted: var(--muted); --ss-field: var(--raise); }
 body { background: var(--bg); color: var(--fg); font: 15px/1.4 var(--f-ui); overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -173,8 +174,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
     </div>
     <div class="spacer"></div>
     <nav class="links" aria-label="Other pages"><a href="./">3D viewer</a><a href="animate.html">Animation</a><a href="draftpad.html">Draftpad</a></nav>
-    <button class="chip ok" id="saveChip" type="button">Saved</button>
-    <button class="btn primary" id="designBtn">Save</button>
+    <span id="ssBox"></span>
     <button class="btn" id="exportBtn">Export</button>
   </header>
 
@@ -252,30 +252,6 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
   </div>
 </div>
 
-<dialog id="designDlg"><form class="dlg" method="dialog">
-  <h3>Shared design</h3>
-  <p id="designState">Loading…</p>
-  <div class="row" style="justify-content:stretch"><input type="text" id="saveNote" placeholder="What changed? e.g. raised roller 2" aria-label="What changed" style="flex:1"><button type="button" class="btn primary" id="saveBtn">Save for everyone</button></div>
-  <div class="notice" id="conflict" hidden><span id="conflictText"></span><div class="row" style="justify-content:flex-start"><button type="button" class="btn small" id="saveForce">Save mine anyway</button><button type="button" class="btn small" id="loadTheirs">Load theirs</button></div></div>
-  <div class="row" style="justify-content:flex-start">
-    <button type="button" class="btn" id="discardBtn">Discard my changes</button>
-    <button type="button" class="btn" id="defaultBtn">Restore default</button>
-    <label class="btn" style="display:inline-flex;align-items:center">Import .json<input type="file" id="importIn" accept=".json,application/json" hidden></label>
-  </div>
-  <h4 class="lbl">Versions</h4>
-  <div class="projlist" id="versionList"><p>Loading…</p></div>
-  <details id="tokenBox"><summary id="tokenSum">GitHub access (needed to save)</summary>
-    <ol>
-      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a></li>
-      <li>Repository access: <b>Only select repositories</b> → <b>pollinator-robot</b></li>
-      <li>Permissions → Repository → <b>Contents: Read and write</b>, then Generate and copy it</li>
-    </ol>
-    <p>Teammates you add as collaborators can use a classic token with the <b>public_repo</b> scope. The token stays in this browser only.</p>
-    <div class="row" style="justify-content:stretch;margin-top:8px"><input type="password" id="tokenIn" placeholder="github_pat_…" aria-label="GitHub token" autocomplete="off"><button type="button" class="btn" id="tokenSave">Use token</button><button type="button" class="btn danger" id="tokenForget">Forget</button></div>
-  </details>
-  <div class="row"><button class="btn">Close</button></div>
-</form></dialog>
-
 <dialog id="expDlg"><form class="dlg" method="dialog">
   <h3>Export</h3>
   <p id="expNote">Download your work to keep a copy or open it in other 3D apps.</p>
@@ -283,6 +259,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
     <div class="proj"><div><b>Project code</b><small>.json · code + rev, to keep a copy or share</small></div><button type="button" class="btn small" id="expJson">Download</button></div>
     <div class="proj"><div><b>Robot + your parts</b><small>.glb · everything visible now</small></div><button type="button" class="btn small" id="expAll">Download</button></div>
     <div class="proj"><div><b>Only your parts</b><small>.glb · for Blender, Onshape, slicers</small></div><button type="button" class="btn small" id="expMine">Download</button></div>
+    <div class="proj"><div><b>Open a project file</b><small>.json from Download above</small></div><label class="btn small" style="display:inline-flex;align-items:center">Import<input type="file" id="importIn" accept=".json,application/json" hidden></label></div>
   </div>
   <div class="row"><button class="btn">Close</button></div>
 </form></dialog>
@@ -305,6 +282,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
   setTimeout(function () { if (!window.__pwModule) report("Startup timed out loading the 3D engine from cdn.jsdelivr.net. Check your connection and reload."); }, 20000);
 })();
 </script>
+<script src="shared-save.js"></script>
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/+esm";
 import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js/+esm";
@@ -652,7 +630,6 @@ function run() {
   if (ok) { errLine = null; setStatus(`Ran OK · ${userParts.length} part${userParts.length === 1 ? "" : "s"} of yours · ${rev === "none" ? "blank, no robot" : "Rev " + rev}`, "ok"); }
   gutter(); renderConsole(); renderParts();
   if (sel && !allParts().includes(sel)) select(null);
-  saveDraft();
 }
 
 // ------------------------------------------------------------ editor
@@ -1181,151 +1158,20 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
 });
 
-// ------------------------------------------------------------ the shared design (saved in the GitHub repo) and export
-// designs/current.json  the design everyone opens; every Save is a commit, so every version is kept
-// designs/default.json  the frozen baseline; this page never writes it, "Restore default" loads it
-const REPO = "KimngGnmik/pollinator-robot", GH = `https://api.github.com/repos/${REPO}`;
-const CURRENT = "designs/current.json", DEFAULT = "designs/default.json";
-let shared = null;                                     // {rev, code, sha, savedAt}
-const token = () => store.get("pw-gh-token") || "";
-const ghHeaders = () => { const h = {Accept: "application/vnd.github+json"}; if (token()) h.Authorization = "Bearer " + token(); return h; };
-const fromB64 = b => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\s/g, "")), c => c.charCodeAt(0)));
-function toB64(str) {
-  const bytes = new TextEncoder().encode(str); let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-}
-async function ghFile(path, ref = "main") {
-  const r = await fetch(`${GH}/contents/${path}?ref=${ref}`, {headers: ghHeaders(), cache: "no-store"});
-  if (!r.ok) throw Object.assign(new Error(r.status === 404 ? "not found" : r.status === 403 || r.status === 429 ? "GitHub is rate-limiting this network; try again in a few minutes" : `GitHub error ${r.status}`), {status: r.status});
-  const j = await r.json();
-  return {sha: j.sha, data: JSON.parse(fromB64(j.content))};
-}
-async function readDesign(path, ref) {                 // GitHub first (always fresh), the site's own copy as a fallback
-  try { const f = await ghFile(path, ref); return {...f.data, sha: f.sha}; }
-  catch (e) {
-    if (ref) throw e;
-    const r = await fetch(path, {cache: "no-store"}); if (!r.ok) throw e;
-    return {...(await r.json()), sha: null};
-  }
-}
-const isDirty = () => !shared || code.value !== shared.code || rev !== shared.rev;
-function saveDraft() {
-  if (!shared) return;
-  store.set("pw-draft", isDirty() ? JSON.stringify({code: code.value, rev, base: shared.sha}) : "");
-  updateSaveState();
-}
-function readDraft() { try { const d = JSON.parse(store.get("pw-draft") || "null"); return d && typeof d.code === "string" ? d : null; } catch { return null; } }
-function updateSaveState() {
-  const chip = $("saveChip"), dirty = isDirty();
-  chip.textContent = !shared ? "Offline" : dirty ? "Unsaved changes" : "Saved";
-  chip.className = "chip " + (dirty ? "dirty" : "ok");
-  $("designState").textContent = !shared ? "Couldn't reach the shared design. Your edits are kept on this device."
-    : dirty ? "You have changes on this device that nobody else sees yet. Save them for everyone, or discard them."
-    : `This is the shared design${shared.savedAt ? ", saved " + new Date(shared.savedAt).toLocaleString() : ""}.`;
-}
-async function boot() {
-  $("loading").textContent = "Loading the shared design…";
-  try { shared = await readDesign(CURRENT); } catch { shared = null; }
-  const draft = readDraft();
-  const src = draft && (!shared || draft.code !== shared.code || draft.rev !== shared.rev) ? draft : shared;
-  code.value = src ? src.code : EXAMPLE;
-  rev = (src && src.rev) || rev;
-  gutter(); loadRev(rev);
-  if (src === draft && draft) {
-    setTimeout(() => toast(shared && draft.base && shared.sha && draft.base !== shared.sha
-      ? "Someone saved a newer shared design since your unsaved changes. Open Save to compare." : "Your unsaved changes from last time are back."), 800);
-  }
-}
+// ------------------------------------------------------------ team designs (saved in the GitHub repo by shared-save.js) and export
 function loadDesign(d, msg) {
   undoStack.push(code.value);
   code.value = d.code || ""; gutter();
   if (d.rev && d.rev !== rev && ["A", "B", "C", "none"].includes(d.rev)) loadRev(d.rev); else run();
   if (msg) toast(msg);
 }
-function openDesign(focusToken) {
-  $("conflict").hidden = true;
-  updateSaveState(); listVersions();
-  $("tokenSum").textContent = token() ? "GitHub access: set on this browser" : "GitHub access (needed to save)";
-  $("tokenBox").open = !!focusToken || !token();
-  if (!$("designDlg").open) $("designDlg").showModal();
-}
-$("designBtn").onclick = () => openDesign();
-$("saveChip").onclick = () => openDesign();
-$("tokenSave").onclick = () => {
-  const t = $("tokenIn").value.trim(); if (!t) return toast("Paste a token first");
-  store.set("pw-gh-token", t); $("tokenIn").value = ""; $("tokenBox").open = false;
-  $("tokenSum").textContent = "GitHub access: set on this browser"; toast("Token saved in this browser");
-};
-$("tokenForget").onclick = () => { store.set("pw-gh-token", ""); $("tokenSum").textContent = "GitHub access (needed to save)"; toast("Token removed from this browser"); };
-
-async function saveShared(force) {
-  if (!token()) { openDesign(true); return toast("Add a GitHub token to save for everyone"); }
-  $("saveBtn").disabled = true;
-  try {
-    let latest = null;
-    try { latest = await ghFile(CURRENT); } catch (e) { if (e.status !== 404) throw e; }
-    if (!force && latest && shared && shared.sha && latest.sha !== shared.sha) {
-      $("conflictText").textContent = "Someone saved a newer version while you were editing. Saving yours replaces it, but theirs stays in Versions.";
-      $("conflict").hidden = false; return;
-    }
-    const note = $("saveNote").value.trim() || "Update design";
-    const design = {name: "Pollinator design", rev, code: code.value, savedAt: new Date().toISOString()};
-    const body = {message: note, content: toB64(JSON.stringify(design, null, 2) + "\n"), branch: "main"};
-    if (latest) body.sha = latest.sha;
-    const r = await fetch(`${GH}/contents/${CURRENT}`, {method: "PUT", headers: {...ghHeaders(), "Content-Type": "application/json"}, body: JSON.stringify(body)});
-    if (r.status === 401) throw new Error("GitHub didn't accept the token. Check it, or make a new one.");
-    if (r.status === 403 || r.status === 404) throw new Error("That token can't write to pollinator-robot. It needs Contents: Read and write on this repository.");
-    if (r.status === 409 || r.status === 422) throw new Error("Someone saved at the same moment. Press Save again.");
-    if (!r.ok) throw new Error(`GitHub error ${r.status}`);
-    const j = await r.json();
-    shared = {...design, sha: j.content.sha};
-    $("saveNote").value = ""; $("conflict").hidden = true;
-    saveDraft(); listVersions();
-    toast("Saved for everyone");
-  } catch (e) { toast("Couldn't save: " + e.message); }
-  finally { $("saveBtn").disabled = false; }
-}
-$("saveBtn").onclick = () => saveShared(false);
-$("saveForce").onclick = () => saveShared(true);
-$("loadTheirs").onclick = async () => {
-  try { shared = await readDesign(CURRENT); $("conflict").hidden = true; loadDesign(shared, "Loaded the newest shared design"); }
-  catch (e) { toast("Couldn't load it: " + e.message); }
-};
-$("discardBtn").onclick = async () => {
-  try { shared = await readDesign(CURRENT); } catch {}
-  if (!shared) return toast("Can't reach the shared design right now");
-  loadDesign(shared, "Back to the shared design. Undo brings your changes back.");
-};
-async function restoreDefault() {
-  try {
-    const d = await readDesign(DEFAULT);
-    loadDesign(d, "Default loaded. Press Save to make it the shared design again.");
-  } catch (e) { setCode(EXAMPLE, "Couldn't reach the saved default, so the built-in example is loaded."); }
-}
-$("defaultBtn").onclick = () => { $("designDlg").close(); restoreDefault(); };
-async function listVersions() {
-  const el = $("versionList");
-  try {
-    const r = await fetch(`${GH}/commits?path=${CURRENT}&per_page=30`, {headers: ghHeaders(), cache: "no-store"});
-    if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? "GitHub is rate-limiting this network; try again in a few minutes" : `GitHub error ${r.status}`);
-    const list = await r.json();
-    el.innerHTML = list.map((c, i) => `<div class="proj${i === 0 ? " current" : ""}"><div><b>${esc(c.commit.message.split("\n")[0])}</b>
-        <small>${i === 0 ? "current · " : ""}${esc(c.commit.author.name)} · ${new Date(c.commit.author.date).toLocaleString()}</small></div>
-        <button type="button" class="btn small" data-ver="${c.sha}">Load</button></div>`).join("")
-      + `<div class="proj"><div><b>Default</b><small>the frozen starting point, never overwritten</small></div><button type="button" class="btn small" data-def="1">Load</button></div>`;
-  } catch (e) { el.innerHTML = `<p>${esc(e.message)}</p>`; }
-}
-$("versionList").onclick = async e => {
-  const v = e.target.closest("[data-ver]"), d = e.target.closest("[data-def]");
-  if (d) { $("designDlg").close(); return restoreDefault(); }
-  if (!v) return;
-  try { const f = await readDesign(CURRENT, v.dataset.ver); $("designDlg").close(); loadDesign(f, "Older version loaded. Save to make it the shared design."); }
-  catch (err) { toast("Couldn't load that version: " + err.message); }
-};
+function startWith(d) { const src = d || {rev: "C", code: EXAMPLE}; code.value = src.code || ""; rev = src.rev || "C"; gutter(); loadRev(rev); }
+const ss = window.SharedSave ? SharedSave({repo: "KimngGnmik/pollinator-robot", folder: "designs/workbench", def: "designs/default.json",
+  container: $("ssBox"), draftKey: "pw", get: () => ({rev, code: code.value}), set: d => loadDesign(d), start: startWith}) : null;
+function restoreDefault() { if (ss) ss.restoreDefault(); else setCode(EXAMPLE, "Example loaded"); }
 $("importIn").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  try { const p = JSON.parse(await f.text()); if (typeof p.code !== "string") throw new Error("that file has no code in it"); $("designDlg").close(); loadDesign(p, "Imported. Save to share it."); }
+  try { const p = JSON.parse(await f.text()); if (typeof p.code !== "string") throw new Error("that file has no code in it"); $("expDlg").close(); loadDesign(p, "Imported. Save to share it."); }
   catch (err) { toast("Couldn't import: " + err.message); }
 };
 
@@ -1350,7 +1196,7 @@ function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false
 
 // ------------------------------------------------------------ start
 resize(); gutter(); renderConsole();
-boot();
+if (!ss) startWith(null);
 </script>
 
 </body></html>
