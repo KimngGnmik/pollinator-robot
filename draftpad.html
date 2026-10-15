@@ -98,6 +98,7 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
       <span class="sp"></span>
       <button id="pen">✎ Pencil</button>
       <input type="color" id="penColor" value="#b8402f" title="Pen color">
+      <label class="l" title="Ignore fingers and palms; only a stylus draws">Pencil only <input type="checkbox" id="penOnly"></label>
       <label class="l">Width <input type="range" id="penW" min="1" max="8" step="0.5" value="2.5"></label>
       <button id="undo" title="Undo last stroke">Undo</button>
       <button id="clearInk">Clear ink</button>
@@ -491,13 +492,18 @@ let strokes=[],cur=null,pen=false;
 function drawInk(){const dpr=devicePixelRatio||1,w=stage.clientWidth,h=stage.clientHeight;ink.width=w*dpr;ink.height=h*dpr;ictx.setTransform(dpr,0,0,dpr,0,0);ictx.lineCap=ictx.lineJoin='round';
  strokes.concat(cur?[cur]:[]).forEach(s=>{ictx.strokeStyle=s.color;ictx.lineWidth=s.w;ictx.beginPath();s.pts.forEach((p,i)=>i?ictx.lineTo(p[0],p[1]):ictx.moveTo(p[0],p[1]));ictx.stroke()})}
 const pos=e=>{const r=ink.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
-ink.addEventListener('pointerdown',e=>{if(!pen)return;ink.setPointerCapture(e.pointerId);
- cur={color:$('penColor').value,w:+$('penW').value*(e.pointerType==='pen'&&e.pressure?0.6+e.pressure:1),pts:[pos(e)]};e.preventDefault()});
-ink.addEventListener('pointermove',e=>{if(!cur)return;cur.pts.push(pos(e));drawInk()});
-const up=()=>{if(!cur)return;if(cur.pts.length===1)cur.pts.push([cur.pts[0][0]+.1,cur.pts[0][1]]);strokes.push(cur);cur=null;drawInk()};
+// palm rejection: on touch screens only the pencil draws (fingers and palms are ignored); remembered per device
+let penOnly=(()=>{try{const v=localStorage.getItem('draftpad.penOnly');return v==null?navigator.maxTouchPoints>0:v==='1'}catch(e){return navigator.maxTouchPoints>0}})();
+const setPenOnly=v=>{penOnly=v;$('penOnly').checked=v;try{localStorage.setItem('draftpad.penOnly',v?'1':'0')}catch(e){}};
+ink.addEventListener('pointerdown',e=>{if(!pen||cur)return;if(e.pointerType==='pen'&&!penOnly)setPenOnly(true);if(penOnly&&e.pointerType==='touch'){e.preventDefault();return}
+ ink.setPointerCapture(e.pointerId);
+ cur={id:e.pointerId,color:$('penColor').value,w:+$('penW').value*(e.pointerType==='pen'&&e.pressure?0.6+e.pressure:1),pts:[pos(e)]};e.preventDefault()});
+ink.addEventListener('pointermove',e=>{if(!cur||e.pointerId!==cur.id)return;((l=>l&&l.length?l:[e])(e.getCoalescedEvents&&e.getCoalescedEvents())).forEach(ev=>cur.pts.push(pos(ev)));drawInk()});
+const up=e=>{if(!cur||e.pointerId!==cur.id)return;if(cur.pts.length===1)cur.pts.push([cur.pts[0][0]+.1,cur.pts[0][1]]);strokes.push(cur);cur=null;drawInk()};
 ink.addEventListener('pointerup',up);ink.addEventListener('pointercancel',up);
 $('pen').onclick=()=>{pen=!pen;$('pen').classList.toggle('on',pen);stage.classList.toggle('pen',pen)};
 $('undo').onclick=()=>{strokes.pop();drawInk()};
+$('penOnly').checked=penOnly;$('penOnly').onchange=e=>setPenOnly(e.target.checked);
 $('clearInk').onclick=()=>{strokes=[];drawInk()};
 
 /* ---------- export ---------- */

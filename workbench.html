@@ -199,12 +199,12 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
       </div>
       <div class="over readout" id="readout">x ↓ back from front bumper · w → right of centre · z ↑ up from tiles · inches</div>
       <form class="over card" id="finish" hidden>
-        <h3 id="finTitle">Make a solid</h3>
+        <h3 id="finTitle">Added to your code</h3>
         <div class="seg fix" id="fixSeg" role="group" aria-label="Clean up the shape"></div>
         <div class="row"><input type="text" id="finName" aria-label="Part name" autocomplete="off"><input type="color" id="finColor" value="#3f7fd9" aria-label="Colour"></div>
         <div class="row"><span class="lbl" id="finSizeLbl">Thickness</span><input type="number" id="finSize" step="any" min="0.01" value="0.25"><span class="lbl">in</span></div>
-        <p class="hint" id="finHint">Centred on the sketch plane. It becomes one line of code you can edit.</p>
-        <div class="row" style="justify-content:flex-end"><button type="button" class="btn" id="finDiscard">Discard</button><button class="btn primary" id="finAdd">Add part</button></div>
+        <p class="hint" id="finHint"></p>
+        <div class="row" style="justify-content:flex-end"><button type="button" class="btn danger" id="finDiscard">Remove</button><button class="btn primary" id="finAdd">Done</button></div>
       </form>
     </div>
 
@@ -826,14 +826,18 @@ let mode = "view";
 const draw = {plane: "side", at: 0, tool: "free", pts: [], live: null, drawing: false, pending: null, preview: null, count: 1};
 const cutPlane = new THREE.Plane();
 const ov = $("ov"), ink = $("ink");
-let penOnly = false;
+// Palm rejection. On a touch screen, only the pencil draws (on by default, remembered); fingers never draw.
+let penOnly = store.get("pw-penonly") == null ? navigator.maxTouchPoints > 0 : store.get("pw-penonly") === "1";
 function setPenOnly(v, announce) {
-  penOnly = v; $("penIn").checked = $("penIn2").checked = v;
-  if (v && announce) toast("Pencil found. Draw with the pencil; your fingers pan and zoom.");
+  penOnly = v; $("penIn").checked = $("penIn2").checked = v; store.set("pw-penonly", v ? "1" : "0");
+  if (v && announce) toast("Pencil found. Only the pencil draws now; use two fingers to pan and zoom.");
 }
+setPenOnly(penOnly);
 $("penIn").onchange = e => setPenOnly(e.target.checked);
 $("penIn2").onchange = e => setPenOnly(e.target.checked);
-const fingerWhilePenOnly = e => { if (e.pointerType === "pen" && !penOnly) setPenOnly(true, true); return penOnly && e.pointerType !== "pen"; };
+const fingerWhilePenOnly = e => { if (e.pointerType === "pen" && !penOnly) setPenOnly(true, true); return penOnly && e.pointerType === "touch"; };
+// every pencil sample since the last frame; some browsers return an empty list, so fall back to the event itself
+const coalesced = e => { const l = e.getCoalescedEvents?.(); return l && l.length ? l : [e]; };
 const pressure = e => e.pointerType === "pen" ? (e.pressure || 0.5) : 0.5;
 
 function setMode(m) {
@@ -865,7 +869,7 @@ function fitView() {
   pan2d = new OrbitControls(ortho, renderer.domElement);
   pan2d.enableRotate = false; pan2d.screenSpacePanning = true; pan2d.target.copy(target);
   pan2d.mouseButtons = {LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN};
-  pan2d.touches = {ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN};
+  pan2d.touches = {ONE: null, TWO: THREE.TOUCH.DOLLY_PAN};
   pan2d.update();
 }
 function buildSketchGrid() {
@@ -914,16 +918,18 @@ function chaikin(pts, closed, n = 2) {       // corner cutting: turns a shaky ha
 }
 const area = pts => Math.abs(pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
 const pxIn = () => (ortho.top - ortho.bottom) / ortho.zoom / stage.clientHeight;      // inches per screen pixel
-function cancelSketch() { draw.pts = []; draw.live = null; draw.drawing = false; draw.pending = null; draw.preview = null; $("finish").hidden = true; $("lineBtns").hidden = true; }
+function cancelSketch() { draw.pts = []; draw.live = null; draw.drawing = false; draw.pointer = null; draw.pending = null; draw.preview = null; $("finish").hidden = true; $("lineBtns").hidden = true; if (pan2d) pan2d.enabled = mode === "draw"; }
 
 stage.addEventListener("pointerdown", e => {
   if (mode !== "draw" || e.target !== renderer.domElement) return;
   if (fingerWhilePenOnly(e)) return;                                  // fingers pan and zoom
   if (e.pointerType === "mouse" && e.button !== 0) return;
-  if (draw.pending) return;
+  if (draw.drawing) return;                                           // already drawing with another pointer
   const p = planePoint(e); if (!p) return;
+  if (draw.pending) { draw.pending = null; $("finish").hidden = true; }
   e.stopPropagation(); e.preventDefault();
-  renderer.domElement.setPointerCapture(e.pointerId);
+  try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
+  if (draw.tool !== "line") { draw.pointer = e.pointerId; if (pan2d) pan2d.enabled = false; }
   const s = snap(p);
   if (draw.tool === "line") {
     const first = draw.pts[0];
@@ -937,15 +943,15 @@ stage.addEventListener("pointermove", e => {
   const p = planePoint(e); if (!p) return;
   readout(snap(p));
   if (draw.tool === "line" && draw.pts.length && !draw.pending) return showPreview([...draw.pts, snap(p)], false);
-  if (!draw.drawing || (penOnly && e.pointerType !== "pen")) return;
+  if (!draw.drawing || e.pointerId !== draw.pointer) return;
   e.stopPropagation();
   if (draw.tool === "free") {
-    for (const ev of (e.getCoalescedEvents?.() || [e])) { const q = planePoint(ev); if (q) { draw.pts.push(q); draw.live.push([q[0], q[1], pressure(ev)]); } }
+    for (const ev of coalesced(e)) { const q = planePoint(ev); if (q) { draw.pts.push(q); draw.live.push([q[0], q[1], pressure(ev)]); } }
   } else { draw.pts[1] = snap(p); showPreview(shapePts(draw.tool, draw.pts), true); }
 }, true);
-stage.addEventListener("pointerup", e => {
-  if (mode !== "draw" || !draw.drawing) return;
-  e.stopPropagation(); draw.drawing = false;
+function strokeEnd(e) {
+  if (mode !== "draw" || !draw.drawing || e.pointerId !== draw.pointer) return;
+  e.stopPropagation(); draw.drawing = false; draw.pointer = null; if (pan2d) pan2d.enabled = true;
   if (draw.tool === "free") {
     const pts = rdp(draw.pts, Math.max(0.005, 0.35 * pxIn())), a = pts[0], b = pts[pts.length - 1];
     const span = Math.max(...pts.map(p => Math.hypot(p[0] - a[0], p[1] - a[1])));
@@ -958,7 +964,9 @@ stage.addEventListener("pointerup", e => {
     if (Math.hypot(u1 - u0, v1 - v0) < 0.06) return cancelSketch();
     finishShape(shapePts(draw.tool, draw.pts), true, draw.tool, draw.pts.slice());
   }
-}, true);
+}
+stage.addEventListener("pointerup", strokeEnd, true);
+stage.addEventListener("pointercancel", strokeEnd, true);
 function shapePts(tool, [[u0, v0], [u1, v1]]) {
   return tool === "rect" ? rect(u0, v0, u1, v1) : circle(u0, v0, Math.hypot(u1 - u0, v1 - v0));
 }
@@ -984,56 +992,70 @@ function finishFree(src, closed) {
   draw.pending = {closed, fixes, kind: "free"};
   finishShape(null, closed, "free");
   chooseFix(pick);
+  commitPart();
 }
 const FIX_LABEL = {smooth: "Smooth", straight: "Straight", circle: "Circle", rect: "Rectangle"};
 function chooseFix(k) {
   const d = draw.pending, f = d.fixes[k];
+  const first = d.pick == null;
   d.pick = k; d.pts = f.pts; d.kind = f.kind; d.raw = f.raw;
   const auto = $("finName").value.match(/^(Sketch|Path|Disc|Plate|Bracket) (\d+)$/);
   if (auto) $("finName").value = `${{circle: "Disc", rect: "Plate", poly: "Bracket"}[f.kind] || (d.closed ? "Sketch" : "Path")} ${auto[2]}`;
   $("fixSeg").innerHTML = Object.keys(d.fixes).map(x => `<button type="button" data-fix="${x}" aria-pressed="${x === k}">${FIX_LABEL[x]}</button>`).join("");
-  showPreview(d.pts, d.closed);
+  if (!first) updatePart();
 }
 $("fixSeg").onclick = e => { const b = e.target.closest("[data-fix]"); if (b && draw.pending) chooseFix(b.dataset.fix); };
 function finishShape(pts, closed, kind, raw) {
   $("lineBtns").hidden = true;
   if (kind !== "free") draw.pending = {pts, closed, kind, raw: raw || draw.pts.slice(), fixes: null};
   $("fixSeg").hidden = kind !== "free"; $("fixSeg").innerHTML = "";
-  if (pts) showPreview(pts, closed);
+  showPreview(null);
   const nm = {rect: "Plate", circle: "Disc", poly: "Bracket", free: closed ? "Sketch" : "Path"}[kind];
   $("finName").value = `${nm} ${draw.count}`;
-  $("finTitle").textContent = closed ? "Make a solid" : "Make a tube";
+  $("finTitle").textContent = closed ? "Added a solid" : "Added a tube";
   $("finSizeLbl").textContent = closed ? "Thickness" : "Diameter";
   $("finSize").value = 0.25;
-  $("finHint").textContent = closed ? `Centred on the ${draw.plane} plane at ${PLANES[draw.plane].d} = ${draw.at} in. It becomes one line of code you can edit.`
-                                    : `A round tube along your line, on the ${draw.plane} plane at ${PLANES[draw.plane].d} = ${draw.at} in.`;
+  $("finHint").textContent = `It's the last line of your code now (${draw.plane} plane, ${PLANES[draw.plane].d} = ${draw.at} in). Changes here update that line.`;
   $("finish").hidden = false;
+  if (kind !== "free") commitPart();
 }
 $("lineOpen").onclick = () => draw.pts.length >= 2 && finishShape(draw.pts, false, "poly");
 $("lineCancel").onclick = cancelSketch;
-$("finDiscard").onclick = cancelSketch;
 const r2 = n => Math.round(n * 100) / 100;
 const ptsCode = pts => "[" + pts.map(([u, v]) => `[${r2(u)}, ${r2(v)}]`).join(", ") + "]";
-$("finish").onsubmit = e => {
-  e.preventDefault();
-  const d = draw.pending; if (!d) return;
+function partLine(d) {
   const name = JSON.stringify($("finName").value.trim() || "Sketch"), size = Math.max(0.01, +$("finSize").value || 0.25), color = $("finColor").value;
-  const opts = `plane: "${draw.plane}", at: ${r2(draw.at)}`;
-  let line;
-  if (d.closed) {
-    let shape;
-    if (d.kind === "rect") { const [[u0, v0], [u1, v1]] = d.raw; shape = `rect(${r2(u0)}, ${r2(v0)}, ${r2(u1)}, ${r2(v1)})`; }
-    else if (d.kind === "circle") { const [[u0, v0], [u1, v1]] = d.raw; shape = `circle(${r2(u0)}, ${r2(v0)}, ${r2(Math.hypot(u1 - u0, v1 - v0))})`; }
-    else shape = ptsCode(d.pts);
-    line = `extrude(${name}, ${shape}, {${opts}, thick: ${size}, color: "${color}"});`;
-  } else line = `tube(${name}, ${ptsCode(d.pts)}, {${opts}, r: ${r2(size / 2)}${d.kind === "poly" ? ", straight: true" : ""}, color: "${color}"});`;
-  draw.count++;
+  const opts = `plane: "${d.plane}", at: ${r2(d.at)}`;
+  if (!d.closed) return `tube(${name}, ${ptsCode(d.pts)}, {${opts}, r: ${r2(size / 2)}${d.kind === "poly" ? ", straight: true" : ""}, color: "${color}"});`;
+  let shape;
+  if (d.kind === "rect") { const [[u0, v0], [u1, v1]] = d.raw; shape = `rect(${r2(u0)}, ${r2(v0)}, ${r2(u1)}, ${r2(v1)})`; }
+  else if (d.kind === "circle") { const [[u0, v0], [u1, v1]] = d.raw; shape = `circle(${r2(u0)}, ${r2(v0)}, ${r2(Math.hypot(u1 - u0, v1 - v0))})`; }
+  else shape = ptsCode(d.pts);
+  return `extrude(${name}, ${shape}, {${opts}, thick: ${size}, color: "${color}"});`;
+}
+function commitPart() {                       // add the drawn shape to the code right away
+  const d = draw.pending; if (!d) return;
+  d.plane = draw.plane; d.at = draw.at; d.line = partLine(d); draw.count++;
+  setCode(appendLine(d.line));
+}
+function updatePart() {                       // the card's controls rewrite that same line
+  const d = draw.pending; if (!d || !d.line) return;
+  const nl = partLine(d), i = code.value.lastIndexOf(d.line);
+  if (i < 0) { cancelSketch(); return toast("That line was edited in the code, so the card closed."); }
+  code.value = code.value.slice(0, i) + nl + code.value.slice(i + d.line.length); d.line = nl;
+  gutter(); clearTimeout(autoTimer); autoTimer = setTimeout(run, 250);
+}
+["finName", "finSize", "finColor"].forEach(id => $(id).addEventListener("input", updatePart));
+$("finDiscard").onclick = () => {
+  const d = draw.pending; if (!d || !d.line) return cancelSketch();
+  const i = code.value.lastIndexOf(d.line);
   cancelSketch();
-  setCode(appendLine(line), "Added to your code. Undo removes it.");
+  if (i >= 0) setCode(code.value.slice(0, i).replace(/\n$/, "") + code.value.slice(i + d.line.length), "Removed. Undo brings it back.");
 };
+$("finish").onsubmit = e => { e.preventDefault(); cancelSketch(); };
 function readout(p) {
   const el = $("readout");
-  if (mode !== "draw" || !p) { el.innerHTML = mode === "markup" ? "Markup: draw notes over the view · Save image keeps them" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
+  if (mode !== "draw" || !p) { el.innerHTML = mode === "markup" ? "Markup is notes only, it doesn't change the code · Save image keeps them" : mode === "draw" ? "Draw with the pencil · two fingers pan and zoom · each shape becomes a line of code" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
   const P = PLANES[draw.plane];
   el.innerHTML = `<b>${P.u}</b> ${p[0].toFixed(3)}  <b>${P.v}</b> ${p[1].toFixed(3)}  <b>${P.d}</b> ${(+draw.at).toFixed(3)} in`;
 }
@@ -1083,11 +1105,12 @@ function drawInk() {
 }
 ink.addEventListener("pointerdown", e => {
   if (mode !== "markup" || fingerWhilePenOnly(e) || (e.pointerType === "mouse" && e.button !== 0)) return;
-  e.preventDefault(); ink.setPointerCapture(e.pointerId);
-  inkCur = {color: $("inkColor").value, w: +$("inkW").value, pts: [inkPt(e)]}; drawInk();
+  e.preventDefault(); try { ink.setPointerCapture(e.pointerId); } catch {}
+  if (inkCur) return;
+  inkCur = {id: e.pointerId, color: $("inkColor").value, w: +$("inkW").value, pts: [inkPt(e)]}; drawInk();
 });
-ink.addEventListener("pointermove", e => { if (!inkCur) return; for (const ev of (e.getCoalescedEvents?.() || [e])) inkCur.pts.push(inkPt(ev)); drawInk(); });
-const inkUp = () => { if (!inkCur) return; inkStrokes.push(inkCur); inkCur = null; drawInk(); };
+ink.addEventListener("pointermove", e => { if (!inkCur || e.pointerId !== inkCur.id) return; for (const ev of coalesced(e)) inkCur.pts.push(inkPt(ev)); drawInk(); });
+const inkUp = e => { if (!inkCur || e.pointerId !== inkCur.id) return; inkStrokes.push(inkCur); inkCur = null; drawInk(); };
 ink.addEventListener("pointerup", inkUp); ink.addEventListener("pointercancel", inkUp);
 $("inkUndo").onclick = () => { inkStrokes.pop(); drawInk(); };
 $("inkClear").onclick = () => { inkStrokes = []; inkPose = {pos: persp.position.clone(), target: orbit.target.clone()}; drawInk(); };
