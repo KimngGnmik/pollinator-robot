@@ -1,5 +1,5 @@
 {
   "name": "Stinger v2",
-  "code": "sheet({title:'Stinger v2', units:'in'})\n\n// the 18 x 18 x 18 sizing box: corner at x=0, y=0, z=0; 18 along x, 18 along y, 18 tall\nbox(0,0,0, 18,18,18, {fill:C.white, alpha:0.15})",
-  "savedAt": "2026-10-15T16:14:48.291Z"
+  "code": "sheet({title:'Stinger v2', units:'in'})\n\n// the 18 x 18 x 18 sizing box: corner at x=0, y=0, z=0; 18 along x, 18 along y, 18 tall\nbox(0,0,0, 18,18,18, {fill:C.white, alpha:0.15})\n\n// Chasis plate: 17 x 17 x 0.25. bottom at Z = 1, centered in the box (0.5 in maegin each side)\nbox(0.5,0.5,1,  17,17,0.25, {fill:C.alu})\n// dim(point A, point B, {off: how far to push the line out, in screen pixel})\ndim([0.5,0.5,1], [17.5,0.5,1], {off:40})\ndim([0.5,0.5,1], [0.5,17.5,1], {off: 40})\ndim([0.5,0.5,1], [0.5,0.5,1.25], {off: 40})\n\n// wheels: axel starts at x=0, y= 2.5, Z = 1.89; radius 1.89, 1.5 wide, axel along X\ncyl(0,15,1.89, 1.89,1.5, {axis:'x', fill:C.dark})\ncyl(0,2.5,1.89, 1.89,1.5, {axis:'x', fill:C.dark})\ncyl(17.5,2.5,1.89, 1.89,1.5, {axis:'x', fill:C.dark})\ncyl(17.5,15,1.89, 1.89,1.5, {axis:'x', fill:C.dark})",
+  "savedAt": "2026-10-15T18:43:20.073Z"
 }
