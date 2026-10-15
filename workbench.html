@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style></head><body>
+<title>Pollinator Workbench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen app. App bar on top; 3D stage left, a tabbed panel (Code / Parts / Console) right; stacks under 900px. */
+:root {
+  --bg: #eff1ec; --panel: #ffffff; --raise: #f6f7f3; --line: #d6dacf; --fg: #1c201a; --muted: #5f665a;
+  --accent: #e2b714; --accent-ink: #231d00; --accent-soft: #f6e7a6; --user: #3f7fd9;
+  --stage: #e3e7df; --grid-a: #b9bfb2; --grid-b: #cfd4c8;
+  --ok: #2f8a52; --bad: #c73a3a; --code-bg: #fafbf8;
+  --f-ui: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --f-label: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #14161a; --panel: #1b1e23; --raise: #22262c; --line: #30353d; --fg: #e7e8e3; --muted: #9aa094;
+  --accent: #f0c419; --accent-ink: #1d1700; --accent-soft: #4a3d08; --user: #5b97ec;
+  --stage: #0f1114; --grid-a: #3a4048; --grid-b: #23272d; --ok: #4fbf7a; --bad: #ef6161; --code-bg: #16191d; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #14161a; --panel: #1b1e23; --raise: #22262c; --line: #30353d; --fg: #e7e8e3; --muted: #9aa094;
+  --accent: #f0c419; --accent-ink: #1d1700; --accent-soft: #4a3d08; --user: #5b97ec;
+  --stage: #0f1114; --grid-a: #3a4048; --grid-b: #23272d; --ok: #4fbf7a; --bad: #ef6161; --code-bg: #16191d; color-scheme: dark }
+
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.4 var(--f-ui); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { font: 700 20px/1 var(--f-label); letter-spacing: .02em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; margin-right: 6px; }
+.brand i { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
+.spacer { flex: 1; }
+.links { display: flex; gap: 4px; flex-wrap: wrap; }
+.links a { color: var(--muted); text-decoration: none; padding: 7px 9px; border-radius: var(--r); font-weight: 500; }
+.links a:hover { color: var(--fg); background: var(--raise); }
+.stage canvas.layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.stage.marking #ink { pointer-events: auto; cursor: crosshair; }
+.drawbar input[type=range] { width: 90px; accent-color: var(--accent); }
+.card .fix { display: flex; }
+.card .fix button { flex: 1; padding: 6px 4px; font-size: 14px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--raise); }
+.seg button { border: 0; background: none; padding: 7px 12px; min-height: 36px; font-weight: 500; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.lbl { font: 600 12px/1 var(--f-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.btn { border: 1px solid var(--line); background: var(--raise); border-radius: var(--r); padding: 7px 12px; min-height: 36px; font-weight: 500; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.small { min-height: 30px; padding: 4px 9px; font-size: 13px; }
+.btn.danger { color: var(--bad); }
+
+.main { min-height: 0; display: grid; grid-template-columns: 1fr minmax(340px, 420px); }
+.stage { position: relative; min-width: 0; min-height: 0; background: var(--stage); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.panel { min-height: 0; display: grid; grid-template-rows: auto 1fr; background: var(--panel); border-left: 1px solid var(--line); }
+.tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
+.tabs button { border: 0; background: none; padding: 11px 12px 9px; font: 600 14px/1 var(--f-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 3px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tabs .count { font: 500 11px var(--f-mono); color: var(--muted); margin-left: 4px; }
+.tabpanel { min-height: 0; overflow: auto; }
+
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; grid-template-rows: 52% 48%; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+/* overlays on the stage */
+.over { position: absolute; z-index: 2; }
+.drawbar { top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r); padding: 8px; backdrop-filter: blur(6px); }
+.drawbar .grp { display: flex; align-items: center; gap: 6px; }
+.drawbar input[type=number] { width: 78px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--raise); font: 14px var(--f-mono); }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; padding: 4px 6px; }
+.chk input { width: 18px; height: 18px; accent-color: var(--accent); }
+.readout { left: 10px; bottom: 10px; font: 12px/1.5 var(--f-mono); color: var(--muted); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+.readout b { color: var(--fg); font-weight: 500; }
+.loading { inset: 0; display: grid; place-items: center; pointer-events: none; font: 600 16px var(--f-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.card { right: 10px; bottom: 10px; width: min(320px, calc(100% - 20px)); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+.card h3 { margin: 0; font: 700 16px var(--f-label); text-transform: uppercase; letter-spacing: .04em; }
+.card .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.card input[type=text], .card input[type=number] { flex: 1; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--raise); }
+.card input[type=number] { font-family: var(--f-mono); }
+.card .hint { font-size: 13px; color: var(--muted); margin: 0; }
+input[type=color] { width: 40px; height: 34px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--raise); }
+
+/* code tab */
+.codewrap { height: 100%; display: grid; grid-template-rows: auto auto 1fr auto; }
+.codebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.snips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+.snips button { flex: none; border: 1px solid var(--line); background: var(--raise); border-radius: 999px; padding: 3px 10px; font: 12px var(--f-mono); }
+.editor { position: relative; min-height: 0; display: grid; grid-template-columns: auto 1fr; background: var(--code-bg); overflow: hidden; }
+.gutter { font: 13px/1.6 var(--f-mono); color: var(--muted); text-align: right; padding: 10px 8px 10px 10px; user-select: none; opacity: .7; overflow: hidden; white-space: pre; }
+.gutter .err { color: var(--bad); opacity: 1; font-weight: 500; }
+textarea#code { border: 0; outline: none; resize: none; background: transparent; font: 13px/1.6 var(--f-mono); padding: 10px 10px 40px 4px; white-space: pre; overflow: auto; tab-size: 2; min-width: 0; }
+.status { font: 12px/1.4 var(--f-mono); padding: 7px 10px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: baseline; }
+.status.ok { color: var(--ok); }
+.status.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 9%, transparent); cursor: pointer; }
+details.ref { border-bottom: 1px solid var(--line); }
+details.ref summary { padding: 8px 10px; cursor: pointer; font: 600 13px var(--f-label); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+details.ref pre { margin: 0; padding: 0 10px 10px; font: 12px/1.55 var(--f-mono); white-space: pre-wrap; color: var(--fg); max-height: 260px; overflow: auto; }
+details.ref pre em { color: var(--muted); font-style: normal; }
+
+/* parts tab */
+.parts { padding: 10px; display: grid; gap: 10px; }
+.search { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); }
+.insp { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 8px; background: var(--raise); }
+.insp h4 { margin: 0; font: 600 16px var(--f-ui); overflow-wrap: anywhere; }
+.insp .dims { font: 12px var(--f-mono); color: var(--muted); }
+.nudge { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: 4px 6px; align-items: center; }
+.nudge .lbl { text-align: right; }
+.nudge > div { display: flex; gap: 4px; }
+.nudge button { flex: 1; min-height: 34px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font: 13px var(--f-mono); }
+.plist { display: grid; }
+.plist h5 { margin: 10px 0 4px; font: 600 12px var(--f-label); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.prow { display: flex; align-items: center; gap: 8px; padding: 6px 6px; border-radius: 6px; cursor: pointer; min-height: 34px; }
+.prow:hover { background: var(--raise); }
+.prow.sel { background: var(--accent-soft); }
+.prow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.prow.hid .nm { opacity: .45; text-decoration: line-through; }
+.tag { font: 11px var(--f-mono); padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tag.user { color: var(--user); border-color: var(--user); }
+.eye { border: 0; background: none; width: 30px; height: 28px; border-radius: 6px; color: var(--muted); display: grid; place-items: center; }
+.eye:hover { background: var(--panel); color: var(--fg); }
+
+/* console */
+.console { font: 12px/1.6 var(--f-mono); padding: 8px 10px; display: grid; gap: 2px; }
+.console div { white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px dashed var(--line); padding: 3px 0; }
+.console .e { color: var(--bad); }
+.console .s { color: var(--ok); }
+.console .empty { color: var(--muted); border: 0; }
+
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--fg); padding: 0; width: min(460px, calc(100% - 32px)); }
+dialog::backdrop { background: rgba(10,12,14,.45); }
+.dlg { padding: 16px; display: grid; gap: 12px; }
+.dlg h3 { margin: 0; font: 700 20px var(--f-label); text-transform: uppercase; letter-spacing: .03em; }
+.dlg p { margin: 0; color: var(--muted); font-size: 14px; }
+.dlg input[type=text] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); }
+.projlist { display: grid; gap: 6px; max-height: 300px; overflow: auto; }
+.proj { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; }
+.proj div { flex: 1; min-width: 0; }
+.proj b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj small { color: var(--muted); font: 12px var(--f-mono); }
+.dlg .row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 14px; border-radius: 8px; font-size: 14px; z-index: 20; max-width: calc(100% - 32px); }
+@media (prefers-reduced-motion: no-preference) { .toast { transition: opacity .2s; } }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><i></i>Pollinator Workbench</div>
+    <div class="seg" id="revSeg" role="group" aria-label="Robot revision">
+      <button data-rev="A">Rev A</button><button data-rev="B">Rev B</button><button data-rev="C" aria-pressed="true">Rev C</button>
+    </div>
+    <div class="seg" id="modeSeg" role="group" aria-label="Mode">
+      <button data-mode="view" aria-pressed="true">3D view</button><button data-mode="draw">Draw parts</button><button data-mode="markup">Markup</button>
+    </div>
+    <div class="spacer"></div>
+    <nav class="links" aria-label="Other pages"><a href="./">3D viewer</a><a href="animate.html">Animation</a><a href="draftpad.html">Draftpad</a></nav>
+    <button class="btn" id="projBtn">Projects</button>
+    <button class="btn" id="exportBtn">Export</button>
+  </header>
+
+  <div class="main">
+    <div class="stage" id="stage">
+      <canvas class="layer" id="ov"></canvas>
+      <canvas class="layer" id="ink"></canvas>
+      <div class="over loading" id="loading">Loading Rev C…</div>
+      <div class="over drawbar" id="markbar" hidden>
+        <span class="lbl">Pencil markup</span>
+        <input type="color" id="inkColor" value="#d6452f" aria-label="Ink colour">
+        <label class="grp"><span class="lbl">Width</span><input type="range" id="inkW" min="1" max="10" step="0.5" value="3"></label>
+        <label class="chk"><input type="checkbox" id="penIn2">Pencil only</label>
+        <button class="btn small" id="inkUndo">Undo</button>
+        <button class="btn small" id="inkClear">Clear</button>
+        <button class="btn small primary" id="inkSave">Save image</button>
+      </div>
+      <div class="over drawbar" id="drawbar" hidden>
+        <div class="seg" id="planeSeg" role="group" aria-label="Sketch plane">
+          <button data-plane="side" aria-pressed="true">Side</button><button data-plane="top">Top</button><button data-plane="front">Front</button>
+        </div>
+        <label class="grp"><span class="lbl" id="atLbl">w =</span><input type="number" id="atIn" step="any" value="0"><span class="lbl">in</span></label>
+        <div class="seg" id="toolSeg" role="group" aria-label="Drawing tool">
+          <button data-tool="free" aria-pressed="true">Freehand</button><button data-tool="line">Lines</button><button data-tool="rect">Rect</button><button data-tool="circle">Circle</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="snapIn" checked>Snap ⅛ in</label>
+        <label class="chk"><input type="checkbox" id="cutIn">Cut robot</label>
+        <label class="chk"><input type="checkbox" id="penIn">Pencil only</label>
+        <button class="btn small" id="fitBtn">Fit</button>
+        <span id="lineBtns" hidden><button class="btn small" id="lineOpen">Finish as tube</button> <button class="btn small" id="lineCancel">Cancel</button></span>
+      </div>
+      <div class="over readout" id="readout">x ↓ back from front bumper · w → right of centre · z ↑ up from tiles · inches</div>
+      <form class="over card" id="finish" hidden>
+        <h3 id="finTitle">Make a solid</h3>
+        <div class="seg fix" id="fixSeg" role="group" aria-label="Clean up the shape"></div>
+        <div class="row"><input type="text" id="finName" aria-label="Part name" autocomplete="off"><input type="color" id="finColor" value="#3f7fd9" aria-label="Colour"></div>
+        <div class="row"><span class="lbl" id="finSizeLbl">Thickness</span><input type="number" id="finSize" step="any" min="0.01" value="0.25"><span class="lbl">in</span></div>
+        <p class="hint" id="finHint">Centred on the sketch plane. It becomes one line of code you can edit.</p>
+        <div class="row" style="justify-content:flex-end"><button type="button" class="btn" id="finDiscard">Discard</button><button class="btn primary" id="finAdd">Add part</button></div>
+      </form>
+    </div>
+
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="code">Code</button>
+        <button role="tab" data-tab="parts">Parts<span class="count" id="partCount"></span></button>
+        <button role="tab" data-tab="console">Console<span class="count" id="logCount"></span></button>
+      </div>
+      <div class="tabpanel" id="tab-code">
+        <div class="codewrap">
+          <div class="codebar">
+            <button class="btn primary small" id="runBtn">Run</button>
+            <label class="chk"><input type="checkbox" id="autoIn" checked>Auto-run</label>
+            <button class="btn small" id="undoBtn">Undo</button>
+            <div class="spacer"></div>
+            <button class="btn small" id="resetBtn">Reset to example</button>
+          </div>
+          <div>
+            <div class="snips" id="snips"></div>
+            <details class="ref"><summary>API reference</summary><pre id="refText"></pre></details>
+          </div>
+          <div class="editor"><div class="gutter" id="gutter">1</div><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
+          <div class="status" id="status">Ready</div>
+        </div>
+      </div>
+      <div class="tabpanel" id="tab-parts" hidden>
+        <div class="parts">
+          <input class="search" id="pSearch" type="search" placeholder="Search parts (e.g. roller, flywheel, hood)" aria-label="Search parts">
+          <div class="insp" id="insp" hidden></div>
+          <div class="plist" id="plist"></div>
+        </div>
+      </div>
+      <div class="tabpanel" id="tab-console" hidden><div class="console" id="console"><div class="empty">Output from log() and shoot() shows here.</div></div></div>
+    </section>
+  </div>
+</div>
+
+<dialog id="projDlg"><form class="dlg" method="dialog" id="projForm">
+  <h3>Projects</h3>
+  <p id="projNote">Projects are saved in this browser on this device. To send one to Claude, press Download and share the .json file, or copy the code.</p>
+  <div class="row" style="justify-content:stretch"><input type="text" id="projName" placeholder="Project name" aria-label="Project name" style="flex:1"><button type="button" class="btn primary" id="projSave">Save</button></div>
+  <div class="projlist" id="projList"></div>
+  <div class="row"><label class="btn" style="display:inline-flex;align-items:center">Import .json<input type="file" id="importIn" accept=".json,application/json" hidden></label><span class="spacer"></span><button class="btn">Close</button></div>
+</form></dialog>
+
+<dialog id="expDlg"><form class="dlg" method="dialog">
+  <h3>Export</h3>
+  <p id="expNote">Download your work to keep a copy or open it in other 3D apps.</p>
+  <div class="projlist">
+    <div class="proj"><div><b>Project code</b><small>.json · code + rev, to reopen or send to Claude</small></div><button type="button" class="btn small" id="expJson">Download</button></div>
+    <div class="proj"><div><b>Robot + your parts</b><small>.glb · everything visible now</small></div><button type="button" class="btn small" id="expAll">Download</button></div>
+    <div class="proj"><div><b>Only your parts</b><small>.glb · for Blender, Onshape, slicers</small></div><button type="button" class="btn small" id="expMine">Download</button></div>
+  </div>
+  <div class="row"><button class="btn">Close</button></div>
+</form></dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// Startup watchdog: if anything fails before the robot shows, say why on screen instead of hanging on "Loading".
+(function () {
+  var shown = false;
+  function report(msg) {
+    if (window.__pwStarted && !/^Startup/.test(msg)) return;
+    var el = document.getElementById("loading"); if (!el || shown) return; shown = true;
+    el.style.pointerEvents = "auto"; el.style.textTransform = "none"; el.style.letterSpacing = "0"; el.style.padding = "16px"; el.style.textAlign = "center";
+    el.textContent = "The workbench couldn't start: " + msg;
+  }
+  window.__pwReport = report;
+  window.addEventListener("error", function (e) { report((e.message || "a script failed to load") + (e.filename ? " (" + e.filename.split("/").slice(-2).join("/") + ")" : "")); }, true);
+  window.addEventListener("unhandledrejection", function (e) { report(String(e.reason && e.reason.message || e.reason)); });
+  setTimeout(function () { if (!window.__pwModule) report("Startup timed out loading the 3D engine from cdn.jsdelivr.net. Check your connection and reload."); }, 20000);
+})();
+</script>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/+esm";
+import {OrbitControls} from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js/+esm";
+import {GLTFLoader} from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/GLTFLoader.js/+esm";
+import {GLTFExporter} from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/exporters/GLTFExporter.js/+esm";
+import {RoomEnvironment} from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/environments/RoomEnvironment.js/+esm";
+window.__pwModule = true;
+
+const $ = id => document.getElementById(id);
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+// ------------------------------------------------------------ coordinates (same as pollinator_robot.py)
+// robot: x = back from the front bumper (0..17.5), w = right of centre (left is negative), z = up from the tiles. 1 unit = 1 inch.
+const HALF = 8.75;
+const T = (x, w, z) => new THREE.Vector3(w, z, x - HALF);
+const toRobot = v => ({x: v.z + HALF, w: v.x, z: v.y});
+const AXES = {x: new THREE.Vector3(0, 0, 1), w: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 1, 0)};
+const axisVec = a => { const v = AXES[a]; if (!v) throw new Error(`Axis must be "x", "w" or "z", not ${JSON.stringify(a)}`); return v.clone(); };
+// a sketch plane: 2D (u, v) on the plane, d = distance along its normal
+const PLANES = {
+  side:  {u: "x", v: "z", d: "w", r: (u, v, d) => T(u, d, v), n: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0)},
+  top:   {u: "x", v: "w", d: "z", r: (u, v, d) => T(u, v, d), n: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1)},
+  front: {u: "w", v: "z", d: "x", r: (u, v, d) => T(d, u, v), n: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0)},
+};
+const planeOf = p => { const P = PLANES[p]; if (!P) throw new Error(`plane must be "side", "top" or "front", not ${JSON.stringify(p)}`); return P; };
+const uvOf = (plane, v3) => { const r = toRobot(v3), P = PLANES[plane]; return [r[P.u], r[P.v]]; };
+
+// ------------------------------------------------------------ theme colours for the 3D stage
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let ACC = css("--accent");
+
+// ------------------------------------------------------------ renderer, scene, cameras
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.localClippingEnabled = true;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556070, 0.7));
+const sun = new THREE.DirectionalLight(0xffffff, 1.3); sun.position.set(30, 70, -25); scene.add(sun);
+
+const persp = new THREE.PerspectiveCamera(38, 1, 0.1, 3000);
+persp.position.set(34, 26, -34);
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 2000);
+let camera = persp;
+const orbit = new OrbitControls(persp, renderer.domElement);
+orbit.target.set(0, 6, 0); orbit.enableDamping = true; orbit.update();
+let pan2d = null;   // rebuilt per sketch plane (OrbitControls fixes its up axis at creation)
+
+const floor = new THREE.Group(); scene.add(floor);
+function buildFloor() {
+  floor.clear();
+  const fine = new THREE.GridHelper(144, 72, css("--grid-b"), css("--grid-b"));   // 2 in squares
+  const tiles = new THREE.GridHelper(144, 6, css("--grid-a"), css("--grid-a"));   // 24 in foam tiles
+  fine.position.y = -0.01; floor.add(fine, tiles);
+  scene.background = new THREE.Color(css("--stage"));
+}
+buildFloor();
+const retheme = () => { ACC = css("--accent"); buildFloor(); buildSketchGrid(); };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+new MutationObserver(retheme).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
+
+const robotRoot = new THREE.Group(); scene.add(robotRoot);
+const userGroup = new THREE.Group(); scene.add(userGroup);
+const fxGroup = new THREE.Group(); scene.add(fxGroup);       // shots, hive marker (not exported)
+const sketchGroup = new THREE.Group(); scene.add(sketchGroup);
+let selBox = null;
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  persp.aspect = w / h; persp.updateProjectionMatrix();
+  const H = 34; ortho.left = -H * w / h / 2; ortho.right = H * w / h / 2; ortho.top = H / 2; ortho.bottom = -H / 2; ortho.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ------------------------------------------------------------ the robot
+const gltfCache = {}, ballGeo = {};
+let rev = store.get("pw-rev") || "C";
+let robotParts = [], userParts = [];
+const baseMat = new Map();                        // mesh -> its CAD material (restored on every run)
+const recOf = new Map();                          // Object3D -> part record
+
+async function loadGlb(path, onProgress) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`Couldn't load ${path} (HTTP ${res.status})`);
+  let buf;
+  if (onProgress && res.body && res.headers.get("content-length")) {
+    const total = +res.headers.get("content-length"), rd = res.body.getReader(), chunks = []; let got = 0;
+    for (;;) { const {done, value} = await rd.read(); if (done) break; chunks.push(value); got += value.length; onProgress(got / total); }
+    buf = new Uint8Array(got); let o = 0; for (const c of chunks) { buf.set(c, o); o += c.length; }
+  } else buf = new Uint8Array(await res.arrayBuffer());
+  return new Promise((ok, bad) => new GLTFLoader().parse(buf.buffer, "", ok, bad));
+}
+async function loadRev(r) {
+  $("loading").textContent = `Loading Rev ${r}…`; $("loading").hidden = false;
+  try {
+    if (!gltfCache[r]) {
+      const g = await loadGlb(`glb/rev${r}_anim.glb`, f => $("loading").textContent = `Loading Rev ${r}… ${Math.round(f * 100)}%`);
+      const names = g.parser.json.nodes;
+      const parts = [];
+      g.scene.traverse(o => {
+        const a = g.parser.associations.get(o);
+        if (o !== g.scene && a && a.nodes !== undefined) {
+          const rec = {name: names[a.nodes].name || o.name, obj: o, tag: o.userData.anim || null,
+                       base: {pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.clone(), vis: o.visible}};
+          parts.push(rec);
+        }
+        if (o.isMesh) { o.material.side = THREE.DoubleSide; baseMat.set(o, o.material); }
+      });
+      gltfCache[r] = {scene: g.scene, parts};
+    }
+    rev = r; store.set("pw-rev", r);
+    robotRoot.clear(); robotRoot.add(gltfCache[r].scene);
+    robotParts = gltfCache[r].parts;
+    document.querySelectorAll("#revSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.rev === r));
+    $("loading").hidden = true; window.__pwStarted = true;
+    select(null);
+    run();
+  } catch (e) {
+    $("loading").textContent = `Couldn't load Rev ${r}: ${e.message}`;
+  }
+}
+for (const t of ["pollen", "nectar"]) loadGlb(`glb/${t}.glb`).then(g => g.scene.traverse(o => { if (o.isMesh) ballGeo[t] = o.geometry; })).catch(() => {});
+
+// ------------------------------------------------------------ geometry helpers (world-space edits on any node)
+const M4 = () => new THREE.Matrix4();
+function applyWorld(o, m) {           // o.matrixWorld = m * o.matrixWorld
+  o.updateWorldMatrix(true, false);
+  const w = m.clone().multiply(o.matrixWorld);
+  const local = o.parent ? M4().copy(o.parent.matrixWorld).invert().multiply(w) : w;
+  local.decompose(o.position, o.quaternion, o.scale);
+}
+const rotAbout = (o, c, ax, a) => applyWorld(o, M4().makeTranslation(c.x, c.y, c.z).multiply(M4().makeRotationAxis(ax, a)).multiply(M4().makeTranslation(-c.x, -c.y, -c.z)));
+function boxOf(recs) { const b = new THREE.Box3(); recs.forEach(r => b.expandByObject(r.obj)); return b; }
+const eachMesh = (recs, f) => recs.forEach(r => r.obj.traverse(o => o.isMesh && f(o)));
+const ownMat = m => (m.material === baseMat.get(m) ? (m.material = m.material.clone()) : m.material);
+
+// ------------------------------------------------------------ the code API
+let frameFns = [], hiveSpec = null, logLines = [];
+function log(...a) {
+  logLines.push({t: a.map(v => typeof v === "string" ? v : JSON.stringify(v, (k, x) => typeof x === "number" ? +x.toFixed(3) : x)).join(" "), c: ""});
+  renderConsole();
+}
+const allParts = () => [...userParts, ...robotParts];
+function find(q) {
+  if (q && q.isHandle) return q.recs;
+  const s = String(q).toLowerCase(), all = allParts();
+  let hit = all.filter(r => r.name.toLowerCase() === s);
+  if (!hit.length) hit = all.filter(r => r.name.toLowerCase().startsWith(s));
+  if (!hit.length) hit = all.filter(r => r.name.toLowerCase().includes(s));
+  return hit;
+}
+function handle(recs, label) {
+  if (!recs.length) throw new Error(`No part matches ${JSON.stringify(label)}. The Parts tab lists every name.`);
+  const h = {
+    isHandle: true, recs, get obj() { return recs.map(r => r.obj); }, get names() { return recs.map(r => r.name); },
+    hide() { recs.forEach(r => r.obj.visible = false); return h; },
+    show() { recs.forEach(r => r.obj.visible = true); return h; },
+    color(c) { eachMesh(recs, m => ownMat(m).color.set(c)); return h; },
+    opacity(a) { eachMesh(recs, m => { const mt = ownMat(m); mt.transparent = a < 1; mt.opacity = a; mt.depthWrite = a >= 1; }); return h; },
+    move(dx = 0, dw = 0, dz = 0) { recs.forEach(r => applyWorld(r.obj, M4().makeTranslation(dw, dz, dx))); return h; },
+    rotate(axis, deg, pivot) {
+      const c = pivot ? T(...pivot) : boxOf(recs).getCenter(new THREE.Vector3()), ax = axisVec(axis);
+      recs.forEach(r => rotAbout(r.obj, c, ax, deg * Math.PI / 180)); return h;
+    },
+    spin(rpm, axis = "w") {
+      const ax = axisVec(axis), items = recs.map(r => ({o: r.obj, c: boxOf([r]).getCenter(new THREE.Vector3())}));
+      frameFns.push((t, dt) => { const a = rpm / 60 * 2 * Math.PI * dt; items.forEach(i => rotAbout(i.o, i.c, ax, a)); });
+      return h;
+    },
+    size() { const s = boxOf(recs).getSize(new THREE.Vector3()); return {x: +s.z.toFixed(3), w: +s.x.toFixed(3), z: +s.y.toFixed(3)}; },
+    center() { const c = toRobot(boxOf(recs).getCenter(new THREE.Vector3())); return [+c.x.toFixed(3), +c.w.toFixed(3), +c.z.toFixed(3)]; },
+  };
+  return h;
+}
+const part = name => handle(find(name), name);
+const parts = re => handle(allParts().filter(r => (re instanceof RegExp ? re.test(r.name) : r.name.toLowerCase().includes(String(re).toLowerCase()))), String(re));
+const tagged = tag => handle(robotParts.filter(r => r.tag === tag), `tag ${tag}`);
+const spin = (what, rpm, axis) => (what.isHandle ? what : part(what)).spin(rpm, axis);
+const onFrame = fn => { if (typeof fn !== "function") throw new Error("onFrame needs a function: onFrame((t, dt) => { ... })"); frameFns.push(fn); };
+
+function addPart(name, obj, color) {
+  name = String(name || "Part");
+  let n = name, k = 2; while (userParts.some(r => r.name === n)) n = `${name} (${k++})`;
+  const mat = new THREE.MeshStandardMaterial({color: color || css("--user"), roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide});
+  obj.traverse(o => { if (o.isMesh) o.material = mat; });
+  obj.name = n; userGroup.add(obj);
+  const rec = {name: n, obj, tag: null, user: true}; userParts.push(rec);
+  return handle([rec], n);
+}
+const range = (a, what) => { if (!Array.isArray(a) || a.length !== 2) throw new Error(`${what} must be a [from, to] pair, like [0, 2]`); return [Math.min(...a), Math.max(...a)]; };
+function box(name, {x, w, z} = {}, color) {
+  const [x0, x1] = range(x, "x"), [w0, w1] = range(w, "w"), [z0, z1] = range(z, "z");
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w1 - w0, z1 - z0, x1 - x0));
+  m.position.copy(T((x0 + x1) / 2, (w0 + w1) / 2, (z0 + z1) / 2));
+  return addPart(name, m, color);
+}
+function cyl(name, {at, r = 1, len = 1, axis = "w"} = {}, color) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 48));
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axisVec(axis));
+  m.position.copy(T(...at));
+  return addPart(name, m, color);
+}
+function rodMesh(a, b, r) {
+  const A = T(...a), B = T(...b), m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, A.distanceTo(B), 20));
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+  return m;
+}
+const rod = (name, a, b, r = 0.125, color) => addPart(name, rodMesh(a, b, r), color);
+function ball(name, {at, r = 1.4} = {}, color) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 40, 24)); m.position.copy(T(...at));
+  return addPart(name, m, color);
+}
+const rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+const circle = (cu, cv, r, n = 64) => Array.from({length: n}, (_, i) => [cu + r * Math.cos(i / n * 2 * Math.PI), cv + r * Math.sin(i / n * 2 * Math.PI)]);
+function mapToPlane(g, plane, at) {
+  const P = planeOf(plane), pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const v = P.r(pos.getX(i), pos.getY(i), at + pos.getZ(i)); pos.setXYZ(i, v.x, v.y, v.z); }
+  const o = P.r(0, 0, 0), eu = P.r(1, 0, 0).sub(o), ev = P.r(0, 1, 0).sub(o), ed = P.r(0, 0, 1).sub(o);
+  if (eu.dot(ev.cross(ed)) < 0) {                // mirrored mapping: flip triangle winding so faces point out
+    if (g.index) { const ix = g.index.array; for (let i = 0; i < ix.length; i += 3) [ix[i + 1], ix[i + 2]] = [ix[i + 2], ix[i + 1]]; }
+    else for (const a of Object.values(g.attributes)) { const s = a.itemSize, arr = a.array;
+      for (let i = 0; i < arr.length; i += 3 * s) for (let k = 0; k < s; k++) [arr[i + s + k], arr[i + 2 * s + k]] = [arr[i + 2 * s + k], arr[i + s + k]]; }
+  }
+  g.computeVertexNormals();
+  return g;
+}
+function extrude(name, pts, {plane = "side", at = 0, thick = 0.25, color} = {}) {
+  if (!Array.isArray(pts) || pts.length < 3) throw new Error("extrude needs at least 3 points: [[u, v], [u, v], [u, v]]");
+  const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([u, v]) => new THREE.Vector2(u, v))), {depth: thick, bevelEnabled: false, curveSegments: 6});
+  g.translate(0, 0, -thick / 2);
+  return addPart(name, new THREE.Mesh(mapToPlane(g, plane, at)), color);
+}
+function tube(name, pts, {plane = "side", at = 0, r = 0.125, straight = false, color} = {}) {
+  const P = planeOf(plane);
+  if (!Array.isArray(pts) || pts.length < 2) throw new Error("tube needs at least 2 points");
+  const p3 = pts.map(([u, v]) => P.r(u, v, at)), grp = new THREE.Group();
+  if (straight) {
+    const R3 = pts.map(([u, v]) => { const q = toRobot(P.r(u, v, at)); return [q.x, q.w, q.z]; });
+    for (let i = 1; i < R3.length; i++) grp.add(rodMesh(R3[i - 1], R3[i], r));
+    for (const q of p3) { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 10)); s.position.copy(q); grp.add(s); }
+  } else grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(p3), Math.max(16, pts.length * 4), r, 14, false)));
+  return addPart(name, grp, color);
+}
+
+// ---- ball flight with air drag (BIOBUZZ pollen / nectar: official sizes, AndyMark weights)
+const BALLS = {pollen: {r: 1.4, m: 0.0249, color: "#E2B714", rc: 3.21}, nectar: {r: 1.81, m: 0.0413, color: "#C0392B", rc: 3.62}};
+const HIVE = {pivot: 43.95, low: 53.5, high: 65.6, aimOut: 16.26};   // manual 9.6: opening 53.5-65.6 in up, ~16.3 in out from the pivot
+function hive({distance = 60} = {}) {
+  const xo = -(distance - HIVE.aimOut), mat = new THREE.MeshBasicMaterial({color: css("--accent"), transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide});
+  const open = new THREE.Mesh(new THREE.BoxGeometry(20, HIVE.high - HIVE.low, 8), mat);
+  open.position.copy(T(xo, 0, (HIVE.low + HIVE.high) / 2));
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(open.geometry), new THREE.LineBasicMaterial({color: css("--accent")}));
+  edge.position.copy(open.position);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, HIVE.pivot, 16), new THREE.MeshStandardMaterial({color: 0x888c90}));
+  pole.position.copy(T(-distance, 0, HIVE.pivot / 2));
+  fxGroup.add(open, edge, pole);
+  hiveSpec = {distance, xo};
+  return hiveSpec;
+}
+function shoot({ball: type = "pollen", speed = 22, angle = 60, from, cd = 0.5, slow = 0.5} = {}) {
+  const B = BALLS[type]; if (!B) throw new Error(`ball must be "pollen" or "nectar"`);
+  const th = angle * Math.PI / 180;
+  from = from || [12 + B.rc * Math.sin(th), 0, 5.5 + B.rc * Math.cos(th)];    // where the ball leaves the hood (flywheel at x 12, z 5.5)
+  const IN = 0.0254, k = 0.5 * 1.2 * cd * Math.PI * (B.r * IN) ** 2 / B.m, dt = 0.002;
+  let x = from[0] * IN, z = from[2] * IN, vx = -speed * 0.3048 * Math.cos(th), vz = speed * 0.3048 * Math.sin(th), t = 0;
+  const path = [];
+  while (z > B.r * IN * 0.9 && t < 6 && x > -250 * IN) {
+    path.push([x / IN, z / IN, vz]);
+    const v = Math.hypot(vx, vz); vx -= k * v * vx * dt; vz -= (k * v * vz + 9.81) * dt; x += vx * dt; z += vz * dt; t += dt;
+  }
+  path.push([x / IN, z / IN, vz]);
+  const apex = Math.max(...path.map(p => p[1]));
+  const res = {ball: type, speed, angle, apex: +apex.toFixed(1), flight: +t.toFixed(2)};
+  if (hiveSpec) {
+    const i = path.findIndex(p => p[0] <= hiveSpec.xo);
+    if (i > 0) { const [a, b] = [path[i - 1], path[i]], f = (a[0] - hiveSpec.xo) / (a[0] - b[0]); res.atHive = +(a[1] + (b[1] - a[1]) * f).toFixed(1); res.falling = b[2] < 0; }
+    res.result = res.atHive == null ? "falls short" : res.atHive > HIVE.high ? "too high" : res.atHive < HIVE.low ? "too low" : res.falling ? "IN" : "rising (hits the rim)";
+  }
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(path.map(p => T(p[0], from[1], p[1]))), new THREE.LineDashedMaterial({color: B.color, dashSize: 1.5, gapSize: 1}));
+  line.computeLineDistances(); fxGroup.add(line);
+  const geo = ballGeo[type] || new THREE.SphereGeometry(1, 32, 20), m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: B.color, roughness: 0.5}));
+  m.scale.setScalar(B.r); fxGroup.add(m);
+  let tt = 0; const dur = path.length * dt;
+  frameFns.push((_, d) => { tt = (tt + d * slow) % (dur + 0.6); const p = path[Math.min(path.length - 1, Math.floor(tt / dt))]; m.position.copy(T(p[0], from[1], p[1])); });
+  logLines.push({t: `shoot ${type} ${speed} ft/s @ ${angle}°  apex ${res.apex} in, flight ${res.flight} s` + (hiveSpec ? `, at the hive ${res.atHive ?? "-"} in → ${res.result}` : ""), c: res.result === "IN" ? "s" : ""});
+  renderConsole();
+  return res;
+}
+
+const API = {part, parts, tagged, spin, onFrame, box, cyl, rod, ball, extrude, tube, rect, circle, shoot, hive, log, T, THREE};
+const KEYS = Object.keys(API);
+const LINE_OFFSET = (() => {        // where line 1 of the user's code lands in this browser's stack traces
+  try { new Function(...KEYS, '"use strict";\nthrow new Error("probe")')(); } catch (e) { const n = stackLine(e); return n == null ? null : n - 1; }
+  return null;
+})();
+function stackLine(e) { const m = String(e && e.stack || "").match(/(?:<anonymous>|> Function):(\d+):\d+/); return m ? +m[1] : null; }
+
+// new Function is the normal path; if the page's security policy blocks eval, inject a <script> instead.
+let evalOK = true;
+try { new Function("return 1")(); } catch { evalOK = false; }
+function compile(src) {
+  if (evalOK) return new Function(...KEYS, '"use strict";\n' + src);
+  window.__pwFn = null;
+  const el = document.createElement("script");
+  el.textContent = `window.__pwFn = function (${KEYS.join(", ")}) {"use strict";\n${src}\n};`;
+  document.head.appendChild(el); el.remove();
+  if (typeof window.__pwFn !== "function") throw new Error("Couldn't compile your code (check for a syntax error, like a missing bracket or quote)");
+  return window.__pwFn;
+}
+function reset() {
+  for (const r of robotParts) { r.obj.position.copy(r.base.pos); r.obj.quaternion.copy(r.base.quat); r.obj.scale.copy(r.base.scale); r.obj.visible = r.base.vis; }
+  robotRoot.traverse(o => { if (o.isMesh && baseMat.has(o)) { if (o.material !== baseMat.get(o)) o.material.dispose(); o.material = baseMat.get(o); } });
+  const dispose = g => g.traverse(o => { o.geometry?.dispose?.(); });
+  dispose(userGroup); userGroup.clear(); fxGroup.traverse(o => { if (o.geometry && !Object.values(ballGeo).includes(o.geometry)) o.geometry.dispose(); }); fxGroup.clear();
+  userParts = []; frameFns = []; hiveSpec = null; logLines = [];
+}
+let errLine = null;
+function run() {
+  reset();
+  const src = code.value;
+  let ok = true;
+  try {
+    compile(src)(...KEYS.map(k => API[k]));
+  } catch (e) {
+    ok = false;
+    const n = stackLine(e); errLine = LINE_OFFSET != null && n != null ? n - LINE_OFFSET : null;
+    if (errLine != null && (errLine < 1 || errLine > src.split("\n").length)) errLine = null;
+    setStatus(`${errLine ? "Line " + errLine + ": " : ""}${e.message}`, "bad");
+    logLines.push({t: (errLine ? `line ${errLine}: ` : "") + e.message, c: "e"});
+  }
+  if (ok) { errLine = null; setStatus(`Ran OK · ${userParts.length} part${userParts.length === 1 ? "" : "s"} of yours · Rev ${rev}`, "ok"); }
+  gutter(); renderConsole(); renderParts();
+  if (sel && !allParts().includes(sel)) select(null);
+  store.set("pw-code", src);
+}
+
+// ------------------------------------------------------------ editor
+const code = $("code");
+const EXAMPLE = `// Pollinator Workbench: your code runs on top of the CAD robot.
+// Inches.  x = back from the front bumper (0 to 17.5)
+//          w = right of centre (left is negative)
+//          z = up from the tiles
+// Tap a part in 3D to see its name, or use Draw to sketch new parts with your pencil.
+
+// Spin the parts the CAD export tagged as moving
+spin(tagged("flywheel"), 400);
+spin(tagged("intake"), 120);
+
+// Example part: a front guard plate (delete me)
+box("Front guard (example)", {x: [-0.25, 0], w: [-7, 7], z: [1.5, 3.5]}, "#3f7fd9");
+
+// Example sim: the simplified hive 60 in away, and one pollen shot
+hive({distance: 60});
+shoot({ball: "pollen", speed: 24, angle: 60});
+`;
+code.value = store.get("pw-code") ?? EXAMPLE;
+const undoStack = [];
+function setCode(next, why) {
+  undoStack.push(code.value); if (undoStack.length > 100) undoStack.shift();
+  code.value = next; gutter(); run();
+  if (why) toast(why);
+}
+function gutter() {
+  const n = code.value.split("\n").length;
+  $("gutter").innerHTML = Array.from({length: n}, (_, i) => i + 1 === errLine ? `<span class="err">${i + 1}</span>` : i + 1).join("\n");
+  $("gutter").scrollTop = code.scrollTop;
+}
+code.addEventListener("scroll", () => $("gutter").scrollTop = code.scrollTop);
+let autoTimer = 0;
+code.addEventListener("input", () => { gutter(); clearTimeout(autoTimer); if ($("autoIn").checked) autoTimer = setTimeout(run, 700); });
+code.addEventListener("keydown", e => {
+  if (e.key === "Tab") { e.preventDefault(); insertAtCursor("  "); }
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); }
+});
+function insertAtCursor(s) {
+  const a = code.selectionStart, b = code.selectionEnd;
+  code.setRangeText(s, a, b, "end"); code.dispatchEvent(new Event("input")); code.focus();
+}
+function appendLine(line) {
+  const v = code.value.replace(/\s*$/, "");
+  return v + "\n" + line + "\n";
+}
+$("runBtn").onclick = run;
+$("undoBtn").onclick = () => { if (!undoStack.length) return toast("Nothing to undo"); code.value = undoStack.pop(); gutter(); run(); };
+$("resetBtn").onclick = () => setCode(EXAMPLE, "Example restored. Undo brings your code back.");
+function setStatus(t, cls) { const s = $("status"); s.textContent = t; s.className = "status " + (cls || ""); }
+$("status").onclick = () => {
+  if (!errLine) return;
+  const lines = code.value.split("\n"); let p = 0; for (let i = 0; i < errLine - 1; i++) p += lines[i].length + 1;
+  showTab("code"); code.focus(); code.setSelectionRange(p, p + lines[errLine - 1].length);
+};
+
+const SNIPS = [
+  ["box", `box("Plate", {x: [2, 6], w: [-3, 3], z: [8, 8.25]}, "#3f7fd9");`],
+  ["cyl", `cyl("Standoff", {at: [10, 4, 6], r: 0.25, len: 2, axis: "z"});`],
+  ["rod", `rod("Brace", [4, -6, 2], [12, -6, 9], 0.2);`],
+  ["ball", `ball("Test pollen", {at: [6, 0, 3]}, "#E2B714");`],
+  ["extrude", `extrude("Bracket", [[2, 1], [5, 1], [5, 4]], {plane: "side", at: 6, thick: 0.25});`],
+  ["tube", `tube("Wire", [[1, 2], [4, 6], [8, 5]], {plane: "side", at: -5, r: 0.1});`],
+  ["part", `part("Roller").color("#e2b714");`],
+  ["move", `part("Roller 1").move(0, 0, 0.25);`],
+  ["rotate", `part("Gate flipper").rotate("w", 30);`],
+  ["spin", `spin(tagged("flywheel"), 600);`],
+  ["onFrame", `onFrame((t, dt) => {\n  // runs every frame; t = seconds since Run\n});`],
+  ["shoot", `shoot({ball: "nectar", speed: 26, angle: 60});`],
+  ["hive", `hive({distance: 72});`],
+  ["log", `log(part("Flywheel").size());`],
+];
+$("snips").innerHTML = SNIPS.map(([k]) => `<button type="button" data-k="${k}">${k}</button>`).join("");
+$("snips").onclick = e => { const b = e.target.closest("button"); if (!b) return; const s = SNIPS.find(x => x[0] === b.dataset.k)[1];
+  const a = code.selectionStart, before = code.value.slice(0, a); insertAtCursor((before && !before.endsWith("\n") ? "\n" : "") + s + "\n"); };
+$("refText").innerHTML = `<em>// Make parts. Every call returns a part handle.</em>
+box(name, {x:[x0,x1], w:[w0,w1], z:[z0,z1]}, color?)
+cyl(name, {at:[x,w,z], r, len, axis:"w"|"x"|"z"}, color?)
+rod(name, [x,w,z], [x,w,z], r?, color?)
+ball(name, {at:[x,w,z], r}, color?)
+extrude(name, [[u,v],…], {plane, at, thick, color})
+tube(name, [[u,v],…], {plane, at, r, straight, color})
+rect(u0,v0,u1,v1)   circle(cu,cv,r)   <em>// point lists</em>
+<em>// plane "side": u=x v=z, at=w · "top": u=x v=w, at=z · "front": u=w v=z, at=x</em>
+
+<em>// Find and change parts (robot or yours)</em>
+part("Roller 1")   <em>exact name, else every name that starts with it</em>
+parts(/hood/i)     tagged("flywheel" | "intake" | "gate" | "arm" | "lid" | "hoodclip")
+  .hide() .show() .color("#hex") .opacity(0.3)
+  .move(dx, dw, dz)  .rotate("w", deg, [x,w,z]?)  .spin(rpm, "w")
+  .size() → {x,w,z}  .center() → [x,w,z]  .obj → three.js objects
+
+<em>// Simulate</em>
+shoot({ball:"pollen"|"nectar", speed: ft/s, angle: deg, from?, cd: 0.5, slow: 0.5})
+hive({distance: in})   <em>front bumper to hive pivot; shoot() then reports the height at the opening</em>
+onFrame((t, dt) => …)  log(…)  THREE  T(x,w,z) → three.js Vector3`;
+
+// ------------------------------------------------------------ tabs, console, parts list, inspector
+function showTab(t) {
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  for (const k of ["code", "parts", "console"]) $("tab-" + k).hidden = k !== t;
+}
+document.querySelector(".tabs").onclick = e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.tab); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+function renderConsole() {
+  $("logCount").textContent = logLines.length || "";
+  $("console").innerHTML = logLines.length ? logLines.map(l => `<div class="${l.c}">${esc(l.t)}</div>`).join("") : `<div class="empty">Output from log() and shoot() shows here.</div>`;
+}
+const EYE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+function renderParts() {
+  const q = $("pSearch").value.trim().toLowerCase();
+  const row = r => `<div class="prow${r === sel ? " sel" : ""}${r.obj.visible ? "" : " hid"}" data-i="${r.user ? "u" : "r"}${(r.user ? userParts : robotParts).indexOf(r)}">
+    <span class="nm">${esc(r.name)}</span>${r.tag ? `<span class="tag">${r.tag}</span>` : ""}${r.user ? `<span class="tag user">yours</span>` : ""}
+    <button class="eye" data-eye="1" aria-label="${r.obj.visible ? "Hide" : "Show"} ${esc(r.name)}">${EYE}</button></div>`;
+  const m = r => !q || r.name.toLowerCase().includes(q) || (r.tag || "").includes(q);
+  const u = userParts.filter(m), rb = robotParts.filter(m);
+  $("partCount").textContent = robotParts.length + userParts.length;
+  $("plist").innerHTML = (u.length ? `<h5>Your parts · ${u.length}</h5>` + u.map(row).join("") : "") + `<h5>Rev ${rev} robot · ${rb.length}</h5>` + rb.map(row).join("");
+}
+$("pSearch").oninput = renderParts;
+const recFromRow = el => { const i = el.dataset.i; return (i[0] === "u" ? userParts : robotParts)[+i.slice(1)]; };
+$("plist").onclick = e => {
+  const rowEl = e.target.closest(".prow"); if (!rowEl) return;
+  const r = recFromRow(rowEl);
+  if (e.target.closest("[data-eye]")) return codeEdit(r, r.obj.visible ? "hide" : "show");
+  select(r, true);
+};
+
+let sel = null;
+function select(r, frame) {
+  sel = r;
+  if (selBox) { scene.remove(selBox); selBox = null; }
+  if (r) { selBox = new THREE.BoxHelper(r.obj, css("--accent")); selBox.material.depthTest = false; selBox.renderOrder = 5; scene.add(selBox); }
+  renderInspector(); renderParts();
+  if (r && frame && mode === "view") orbit.target.copy(boxOf([r]).getCenter(new THREE.Vector3()));
+}
+function renderInspector() {
+  const el = $("insp"); el.hidden = !sel; if (!sel) return;
+  const h = handle([sel], sel.name), s = h.size(), c = h.center();
+  el.innerHTML = `<div class="lbl">${sel.user ? "Your part" : "Robot part"}${sel.tag ? " · moves: " + sel.tag : ""}</div>
+    <h4>${esc(sel.name)}</h4>
+    <div class="dims">size x ${s.x} · w ${s.w} · z ${s.z} in<br>centre [${c.join(", ")}]</div>
+    <div class="nudge">
+      <span class="lbl">x</span><div><button data-n="x-">−</button><button data-n="x+">+</button></div>
+      <span class="lbl" style="grid-column:3">step</span><select id="stepIn" aria-label="Nudge step" style="padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--panel)">
+        ${[["0.0625", "1/16 in"], ["0.125", "1/8 in"], ["0.25", "1/4 in"], ["1", "1 in"]].map(([v, l]) => `<option value="${v}"${v === step ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <span class="lbl">w</span><div><button data-n="w-">−</button><button data-n="w+">+</button></div><span></span><span></span>
+      <span class="lbl">z</span><div><button data-n="z-">−</button><button data-n="z+">+</button></div><span></span><span></span>
+    </div>
+    <div class="row" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input type="color" id="colIn" value="#e2b714" aria-label="Colour">
+      <button class="btn small" id="colBtn">Recolour</button>
+      <button class="btn small" id="hideBtn">${sel.obj.visible ? "Hide" : "Show"}</button>
+      <button class="btn small" id="refBtn">Use in code</button>
+    </div>`;
+  $("stepIn").onchange = e => step = e.target.value;
+  el.querySelectorAll("[data-n]").forEach(b => b.onclick = () => {
+    const [ax, sg] = [b.dataset.n[0], b.dataset.n[1] === "+" ? 1 : -1], d = sg * +step;
+    codeEdit(sel, "move", {x: ax === "x" ? d : 0, w: ax === "w" ? d : 0, z: ax === "z" ? d : 0});
+  });
+  $("colBtn").onclick = () => codeEdit(sel, "color", $("colIn").value);
+  $("hideBtn").onclick = () => codeEdit(sel, sel.obj.visible ? "hide" : "show");
+  $("refBtn").onclick = () => { showTab("code"); insertAtCursor(`part(${JSON.stringify(sel.name)})`); };
+}
+let step = "0.125";
+const fmt = n => +(+n).toFixed(4);
+// Every button in the inspector writes code, so the code always describes the whole design.
+function codeEdit(r, op, arg) {
+  const ref = `part(${JSON.stringify(r.name)})`, lines = code.value.replace(/\s*$/, "").split("\n"), last = lines[lines.length - 1];
+  let line;
+  if (op === "move") {
+    const m = last.match(/^part\((".*?")\)\.move\(([-\d.e]+), ([-\d.e]+), ([-\d.e]+)\);$/);
+    if (m && JSON.parse(m[1]) === r.name) { lines.pop(); arg = {x: +m[2] + arg.x, w: +m[3] + arg.w, z: +m[4] + arg.z}; }
+    line = `${ref}.move(${fmt(arg.x)}, ${fmt(arg.w)}, ${fmt(arg.z)});`;
+  } else if (op === "color") {
+    if (last.startsWith(ref + ".color(")) lines.pop();
+    line = `${ref}.color("${arg}");`;
+  } else line = `${ref}.${op}();`;
+  lines.push(line);
+  const keep = sel;
+  setCode(lines.join("\n") + "\n");
+  if (keep) { const again = allParts().find(p => p.name === keep.name); if (again) select(again); }
+}
+
+// ------------------------------------------------------------ picking (tap a part in 3D view)
+const ray = new THREE.Raycaster();
+const ndc = e => { const b = renderer.domElement.getBoundingClientRect(); return new THREE.Vector2((e.clientX - b.left) / b.width * 2 - 1, -(e.clientY - b.top) / b.height * 2 + 1); };
+let downAt = null;
+renderer.domElement.addEventListener("pointerdown", e => { downAt = {x: e.clientX, y: e.clientY, t: performance.now()}; });
+renderer.domElement.addEventListener("pointerup", e => {
+  if (mode !== "view" || !downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6 || performance.now() - downAt.t > 400) return;
+  ray.setFromCamera(ndc(e), camera);
+  const hit = ray.intersectObjects([robotRoot, userGroup], true).find(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+  if (!hit) return select(null);
+  let o = hit.object; const all = allParts();
+  while (o && !all.some(r => r.obj === o)) o = o.parent;
+  select(o ? all.find(r => r.obj === o) : null);
+  if (sel) showTab("parts");
+});
+
+// ------------------------------------------------------------ draw mode
+let mode = "view";
+const draw = {plane: "side", at: 0, tool: "free", pts: [], live: null, drawing: false, pending: null, preview: null, count: 1};
+const cutPlane = new THREE.Plane();
+const ov = $("ov"), ink = $("ink");
+let penOnly = false;
+function setPenOnly(v, announce) {
+  penOnly = v; $("penIn").checked = $("penIn2").checked = v;
+  if (v && announce) toast("Pencil found. Draw with the pencil; your fingers pan and zoom.");
+}
+$("penIn").onchange = e => setPenOnly(e.target.checked);
+$("penIn2").onchange = e => setPenOnly(e.target.checked);
+const fingerWhilePenOnly = e => { if (e.pointerType === "pen" && !penOnly) setPenOnly(true, true); return penOnly && e.pointerType !== "pen"; };
+const pressure = e => e.pointerType === "pen" ? (e.pressure || 0.5) : 0.5;
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m));
+  $("drawbar").hidden = m !== "draw"; $("markbar").hidden = m !== "markup";
+  stage.classList.toggle("marking", m === "markup");
+  if (m === "draw") { camera = ortho; orbit.enabled = false; setPlane(draw.plane); }
+  else { camera = persp; if (pan2d) pan2d.enabled = false; sketchGroup.clear(); cancelSketch(); }
+  orbit.enabled = m === "view";
+  if (m === "markup") {            // ink is drawn on the screen, so it belongs to one camera position: go back to it
+    if (inkStrokes.length && inkPose) { persp.position.copy(inkPose.pos); orbit.target.copy(inkPose.target); persp.lookAt(orbit.target); }
+    else inkPose = {pos: persp.position.clone(), target: orbit.target.clone()};
+  }
+  ink.hidden = m !== "markup"; drawInk(); readout();
+}
+function setPlane(p) {
+  draw.plane = p;
+  document.querySelectorAll("#planeSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.plane === p));
+  $("atLbl").textContent = PLANES[p].d + " =";
+  if (p !== draw.lastPlane) { draw.at = p === "top" ? 6 : p === "front" ? 2 : 0; $("atIn").value = draw.at; draw.lastPlane = p; }
+  cancelSketch(); fitView(); buildSketchGrid();
+}
+function fitView() {
+  const P = PLANES[draw.plane], target = P.r(...(draw.plane === "front" ? [0, 8] : [HALF, draw.plane === "top" ? 0 : 7]), draw.at);
+  if (draw.plane === "top") target.set(0, draw.at, 0);
+  ortho.up.copy(P.up); ortho.position.copy(target).addScaledVector(P.n, 500); ortho.zoom = 1; ortho.lookAt(target); ortho.updateProjectionMatrix();
+  if (pan2d) pan2d.dispose();
+  pan2d = new OrbitControls(ortho, renderer.domElement);
+  pan2d.enableRotate = false; pan2d.screenSpacePanning = true; pan2d.target.copy(target);
+  pan2d.mouseButtons = {LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN};
+  pan2d.touches = {ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN};
+  pan2d.update();
+}
+function buildSketchGrid() {
+  sketchGroup.clear();
+  if (mode !== "draw") return;
+  const P = PLANES[draw.plane], g = new THREE.Group();
+  const mk = (n, c) => { const h = new THREE.GridHelper(72, n, c, c); h.material.transparent = true; h.material.opacity = 0.55; h.material.depthWrite = false; return h; };
+  g.add(mk(144, css("--grid-b")), mk(12, css("--grid-a")));       // 1/2 in and 6 in lines
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), P.n);
+  g.position.copy(P.r(...(draw.plane === "front" ? [0, 0] : [HALF, 0]), draw.at)); if (draw.plane === "top") g.position.set(0, draw.at, 0);
+  g.position.addScaledVector(P.n, -0.02);
+  sketchGroup.add(g);
+}
+function planePoint(e) {
+  ray.setFromCamera(ndc(e), ortho);
+  const P = PLANES[draw.plane], pl = new THREE.Plane().setFromNormalAndCoplanarPoint(P.n, P.r(0, 0, draw.at)), v = new THREE.Vector3();
+  if (!ray.ray.intersectPlane(pl, v)) return null;
+  return uvOf(draw.plane, v);
+}
+const snapOn = () => $("snapIn").checked;
+const snap8 = n => Math.round(n * 8) / 8;
+const snap = p => snapOn() && draw.tool !== "free" ? p.map(snap8) : p;
+const showPreview = (pts, closed) => { draw.preview = pts && pts.length ? {pts, closed} : null; };
+function rdp(pts, eps) {                     // Ramer–Douglas–Peucker: keep the points that matter
+  if (pts.length < 3) return pts;
+  const [a, b] = [pts[0], pts[pts.length - 1]], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+  let iMax = 0, dMax = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = L < 1e-6 ? Math.hypot(pts[i][0] - a[0], pts[i][1] - a[1]) : Math.abs(dy * pts[i][0] - dx * pts[i][1] + b[0] * a[1] - b[1] * a[0]) / L;
+    if (d > dMax) { dMax = d; iMax = i; }
+  }
+  return dMax > eps ? [...rdp(pts.slice(0, iMax + 1), eps).slice(0, -1), ...rdp(pts.slice(iMax), eps)] : [a, b];
+}
+const rdpLoop = (pts, eps) => rdp([...pts, pts[0]], eps).slice(0, -1);
+function chaikin(pts, closed, n = 2) {       // corner cutting: turns a shaky hand line into a smooth curve
+  for (let k = 0; k < n; k++) {
+    const out = closed ? [] : [pts[0]], m = closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < m; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]], [0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    if (!closed) out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
+}
+const area = pts => Math.abs(pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+const pxIn = () => (ortho.top - ortho.bottom) / ortho.zoom / stage.clientHeight;      // inches per screen pixel
+function cancelSketch() { draw.pts = []; draw.live = null; draw.drawing = false; draw.pending = null; draw.preview = null; $("finish").hidden = true; $("lineBtns").hidden = true; }
+
+stage.addEventListener("pointerdown", e => {
+  if (mode !== "draw" || e.target !== renderer.domElement) return;
+  if (fingerWhilePenOnly(e)) return;                                  // fingers pan and zoom
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (draw.pending) return;
+  const p = planePoint(e); if (!p) return;
+  e.stopPropagation(); e.preventDefault();
+  renderer.domElement.setPointerCapture(e.pointerId);
+  const s = snap(p);
+  if (draw.tool === "line") {
+    const first = draw.pts[0];
+    if (draw.pts.length >= 3 && Math.hypot(s[0] - first[0], s[1] - first[1]) < 16 * pxIn()) return finishShape(draw.pts, true, "poly");
+    draw.pts.push(s); $("lineBtns").hidden = draw.pts.length < 2; showPreview(draw.pts, false);
+  } else if (draw.tool === "free") { draw.drawing = true; draw.pts = [p]; draw.live = [[p[0], p[1], pressure(e)]]; }
+  else { draw.drawing = true; draw.pts = [s, s]; }
+}, true);
+stage.addEventListener("pointermove", e => {
+  if (mode !== "draw") return;
+  const p = planePoint(e); if (!p) return;
+  readout(snap(p));
+  if (draw.tool === "line" && draw.pts.length && !draw.pending) return showPreview([...draw.pts, snap(p)], false);
+  if (!draw.drawing || (penOnly && e.pointerType !== "pen")) return;
+  e.stopPropagation();
+  if (draw.tool === "free") {
+    for (const ev of (e.getCoalescedEvents?.() || [e])) { const q = planePoint(ev); if (q) { draw.pts.push(q); draw.live.push([q[0], q[1], pressure(ev)]); } }
+  } else { draw.pts[1] = snap(p); showPreview(shapePts(draw.tool, draw.pts), true); }
+}, true);
+stage.addEventListener("pointerup", e => {
+  if (mode !== "draw" || !draw.drawing) return;
+  e.stopPropagation(); draw.drawing = false;
+  if (draw.tool === "free") {
+    const pts = rdp(draw.pts, Math.max(0.005, 0.35 * pxIn())), a = pts[0], b = pts[pts.length - 1];
+    const span = Math.max(...pts.map(p => Math.hypot(p[0] - a[0], p[1] - a[1])));
+    draw.live = null;
+    if (span < 0.15) return cancelSketch();
+    const closed = pts.length > 3 && Math.hypot(a[0] - b[0], a[1] - b[1]) < Math.max(0.35, span * 0.15, 22 * pxIn());
+    finishFree(closed ? pts.slice(0, -1) : pts, closed);
+  } else {
+    const [[u0, v0], [u1, v1]] = draw.pts;
+    if (Math.hypot(u1 - u0, v1 - v0) < 0.06) return cancelSketch();
+    finishShape(shapePts(draw.tool, draw.pts), true, draw.tool, draw.pts.slice());
+  }
+}, true);
+function shapePts(tool, [[u0, v0], [u1, v1]]) {
+  return tool === "rect" ? rect(u0, v0, u1, v1) : circle(u0, v0, Math.hypot(u1 - u0, v1 - v0));
+}
+// A freehand stroke gets clean-up choices; the closest match is picked for you.
+function finishFree(src, closed) {
+  const span = Math.max(...src.map(p => Math.hypot(p[0] - src[0][0], p[1] - src[0][1])));
+  const fixes = {
+    smooth: closed ? {kind: "free", pts: rdpLoop(chaikin(src, true, 3), 0.01)} : {kind: "free", pts: rdp(chaikin(src, false, 3), 0.01)},
+    straight: {kind: "poly", pts: closed ? rdpLoop(src, Math.max(0.06, span * 0.05)) : rdp(src, Math.max(0.06, span * 0.05))},
+  };
+  let pick = "smooth";
+  if (closed) {
+    const c = src.reduce((s, p) => [s[0] + p[0] / src.length, s[1] + p[1] / src.length], [0, 0]);
+    const ds = src.map(p => Math.hypot(p[0] - c[0], p[1] - c[1])), r = ds.reduce((s, d) => s + d, 0) / ds.length;
+    const err = Math.sqrt(ds.reduce((s, d) => s + (d - r) ** 2, 0) / ds.length) / r;
+    const s8 = n => snapOn() ? snap8(n) : n, cc = [s8(c[0]), s8(c[1])], rr = Math.max(0.0625, s8(r));
+    fixes.circle = {kind: "circle", pts: circle(cc[0], cc[1], rr), raw: [cc, [cc[0] + rr, cc[1]]]};
+    const us = src.map(p => p[0]), vs = src.map(p => p[1]), lo = [s8(Math.min(...us)), s8(Math.min(...vs))], hi = [s8(Math.max(...us)), s8(Math.max(...vs))];
+    fixes.rect = {kind: "rect", pts: rect(lo[0], lo[1], hi[0], hi[1]), raw: [lo, hi]};
+    const fill = area(src) / ((Math.max(...us) - Math.min(...us)) * (Math.max(...vs) - Math.min(...vs)) || 1);
+    pick = err < 0.08 ? "circle" : fill > 0.86 ? "rect" : "smooth";
+  } else if (fixes.straight.pts.length === 2) pick = "straight";
+  draw.pending = {closed, fixes, kind: "free"};
+  finishShape(null, closed, "free");
+  chooseFix(pick);
+}
+const FIX_LABEL = {smooth: "Smooth", straight: "Straight", circle: "Circle", rect: "Rectangle"};
+function chooseFix(k) {
+  const d = draw.pending, f = d.fixes[k];
+  d.pick = k; d.pts = f.pts; d.kind = f.kind; d.raw = f.raw;
+  const auto = $("finName").value.match(/^(Sketch|Path|Disc|Plate|Bracket) (\d+)$/);
+  if (auto) $("finName").value = `${{circle: "Disc", rect: "Plate", poly: "Bracket"}[f.kind] || (d.closed ? "Sketch" : "Path")} ${auto[2]}`;
+  $("fixSeg").innerHTML = Object.keys(d.fixes).map(x => `<button type="button" data-fix="${x}" aria-pressed="${x === k}">${FIX_LABEL[x]}</button>`).join("");
+  showPreview(d.pts, d.closed);
+}
+$("fixSeg").onclick = e => { const b = e.target.closest("[data-fix]"); if (b && draw.pending) chooseFix(b.dataset.fix); };
+function finishShape(pts, closed, kind, raw) {
+  $("lineBtns").hidden = true;
+  if (kind !== "free") draw.pending = {pts, closed, kind, raw: raw || draw.pts.slice(), fixes: null};
+  $("fixSeg").hidden = kind !== "free"; $("fixSeg").innerHTML = "";
+  if (pts) showPreview(pts, closed);
+  const nm = {rect: "Plate", circle: "Disc", poly: "Bracket", free: closed ? "Sketch" : "Path"}[kind];
+  $("finName").value = `${nm} ${draw.count}`;
+  $("finTitle").textContent = closed ? "Make a solid" : "Make a tube";
+  $("finSizeLbl").textContent = closed ? "Thickness" : "Diameter";
+  $("finSize").value = 0.25;
+  $("finHint").textContent = closed ? `Centred on the ${draw.plane} plane at ${PLANES[draw.plane].d} = ${draw.at} in. It becomes one line of code you can edit.`
+                                    : `A round tube along your line, on the ${draw.plane} plane at ${PLANES[draw.plane].d} = ${draw.at} in.`;
+  $("finish").hidden = false;
+}
+$("lineOpen").onclick = () => draw.pts.length >= 2 && finishShape(draw.pts, false, "poly");
+$("lineCancel").onclick = cancelSketch;
+$("finDiscard").onclick = cancelSketch;
+const r2 = n => Math.round(n * 100) / 100;
+const ptsCode = pts => "[" + pts.map(([u, v]) => `[${r2(u)}, ${r2(v)}]`).join(", ") + "]";
+$("finish").onsubmit = e => {
+  e.preventDefault();
+  const d = draw.pending; if (!d) return;
+  const name = JSON.stringify($("finName").value.trim() || "Sketch"), size = Math.max(0.01, +$("finSize").value || 0.25), color = $("finColor").value;
+  const opts = `plane: "${draw.plane}", at: ${r2(draw.at)}`;
+  let line;
+  if (d.closed) {
+    let shape;
+    if (d.kind === "rect") { const [[u0, v0], [u1, v1]] = d.raw; shape = `rect(${r2(u0)}, ${r2(v0)}, ${r2(u1)}, ${r2(v1)})`; }
+    else if (d.kind === "circle") { const [[u0, v0], [u1, v1]] = d.raw; shape = `circle(${r2(u0)}, ${r2(v0)}, ${r2(Math.hypot(u1 - u0, v1 - v0))})`; }
+    else shape = ptsCode(d.pts);
+    line = `extrude(${name}, ${shape}, {${opts}, thick: ${size}, color: "${color}"});`;
+  } else line = `tube(${name}, ${ptsCode(d.pts)}, {${opts}, r: ${r2(size / 2)}${d.kind === "poly" ? ", straight: true" : ""}, color: "${color}"});`;
+  draw.count++;
+  cancelSketch();
+  setCode(appendLine(line), "Added to your code. Undo removes it.");
+};
+function readout(p) {
+  const el = $("readout");
+  if (mode !== "draw" || !p) { el.innerHTML = mode === "markup" ? "Markup: draw notes over the view · Save image keeps them" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
+  const P = PLANES[draw.plane];
+  el.innerHTML = `<b>${P.u}</b> ${p[0].toFixed(3)}  <b>${P.v}</b> ${p[1].toFixed(3)}  <b>${P.d}</b> ${(+draw.at).toFixed(3)} in`;
+}
+
+// ---- 2D layers: smooth, pressure-sensitive ink for sketches and markup
+function sizeLayer(c) {
+  const d = Math.min(devicePixelRatio, 2), w = stage.clientWidth, h = stage.clientHeight, W = Math.round(w * d), H = Math.round(h * d);
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const x = c.getContext("2d"); x.setTransform(d, 0, 0, d, 0, 0); x.clearRect(0, 0, w, h); x.lineCap = x.lineJoin = "round";
+  return x;
+}
+// pts: [[x, y, pressure]] in screen pixels. Midpoint quadratics keep it smooth; width follows pencil pressure.
+function inkLine(x, pts, color, w) {
+  x.strokeStyle = color; x.fillStyle = color;
+  if (pts.length < 3) { const p = pts[0]; x.beginPath(); x.arc(p[0], p[1], w * (0.35 + p[2] * 1.3) / 2, 0, 7); x.fill(); if (pts.length < 2) return; }
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  let from = pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    const to = i < pts.length - 1 ? mid(pts[i], pts[i + 1]) : pts[i];
+    x.lineWidth = w * (0.35 + pts[i][2] * 1.3);
+    x.beginPath(); x.moveTo(from[0], from[1]); x.quadraticCurveTo(pts[i][0], pts[i][1], to[0], to[1]); x.stroke();
+    from = to;
+  }
+}
+const uvScreen = ([u, v]) => { const p = PLANES[draw.plane].r(u, v, draw.at).project(ortho); return [(p.x + 1) / 2 * stage.clientWidth, (1 - p.y) / 2 * stage.clientHeight]; };
+function drawOverlay() {
+  const x = sizeLayer(ov);
+  if (mode !== "draw") return;
+  if (draw.live) inkLine(x, draw.live.map(([u, v, p]) => [...uvScreen([u, v]), p]), ACC, 3);
+  const pv = draw.preview;
+  if (pv) {
+    const s = pv.pts.map(uvScreen);
+    x.beginPath(); s.forEach((q, i) => i ? x.lineTo(q[0], q[1]) : x.moveTo(q[0], q[1]));
+    if (pv.closed) { x.closePath(); x.globalAlpha = 0.22; x.fillStyle = ACC; x.fill(); x.globalAlpha = 1; }
+    x.strokeStyle = ACC; x.lineWidth = 2.5; x.stroke();
+    if (draw.tool === "line" && !draw.pending) { x.fillStyle = ACC; draw.pts.map(uvScreen).forEach(q => { x.beginPath(); x.arc(q[0], q[1], 4, 0, 7); x.fill(); }); }
+  }
+}
+
+// ---- Markup: pencil notes over the 3D view (from Draftpad)
+let inkStrokes = [], inkCur = null, inkPose = null;
+const inkPt = e => { const b = ink.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top, pressure(e)]; };
+function drawInk() {
+  const x = sizeLayer(ink);
+  if (mode !== "markup") return;
+  for (const s of inkCur ? [...inkStrokes, inkCur] : inkStrokes) inkLine(x, s.pts, s.color, s.w);
+}
+ink.addEventListener("pointerdown", e => {
+  if (mode !== "markup" || fingerWhilePenOnly(e) || (e.pointerType === "mouse" && e.button !== 0)) return;
+  e.preventDefault(); ink.setPointerCapture(e.pointerId);
+  inkCur = {color: $("inkColor").value, w: +$("inkW").value, pts: [inkPt(e)]}; drawInk();
+});
+ink.addEventListener("pointermove", e => { if (!inkCur) return; for (const ev of (e.getCoalescedEvents?.() || [e])) inkCur.pts.push(inkPt(ev)); drawInk(); });
+const inkUp = () => { if (!inkCur) return; inkStrokes.push(inkCur); inkCur = null; drawInk(); };
+ink.addEventListener("pointerup", inkUp); ink.addEventListener("pointercancel", inkUp);
+$("inkUndo").onclick = () => { inkStrokes.pop(); drawInk(); };
+$("inkClear").onclick = () => { inkStrokes = []; inkPose = {pos: persp.position.clone(), target: orbit.target.clone()}; drawInk(); };
+$("inkSave").onclick = () => {
+  renderer.render(scene, camera);
+  const c = document.createElement("canvas"), g = renderer.domElement; c.width = g.width; c.height = g.height;
+  const x = c.getContext("2d"); x.drawImage(g, 0, 0); x.drawImage(ink, 0, 0, c.width, c.height);
+  c.toBlob(b => downloadBlob(b, base() + "-markup.png"), "image/png");
+};
+
+$("modeSeg").onclick = e => { const b = e.target.closest("button"); if (b) setMode(b.dataset.mode); };
+$("planeSeg").onclick = e => { const b = e.target.closest("button"); if (b) setPlane(b.dataset.plane); };
+$("toolSeg").onclick = e => { const b = e.target.closest("button"); if (!b) return; draw.tool = b.dataset.tool; cancelSketch();
+  document.querySelectorAll("#toolSeg button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
+$("atIn").oninput = () => { draw.at = +$("atIn").value || 0; buildSketchGrid(); };
+$("fitBtn").onclick = fitView;
+$("revSeg").onclick = e => { const b = e.target.closest("button"); if (b && b.dataset.rev !== rev) loadRev(b.dataset.rev); };
+new ResizeObserver(drawInk).observe(stage);
+
+// ------------------------------------------------------------ render loop
+const clock = new THREE.Clock(); let elapsed = 0;
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05); elapsed += dt;
+  for (const f of frameFns.slice()) {
+    try { f(elapsed, dt); } catch (e) { frameFns = frameFns.filter(x => x !== f); logLines.push({t: "onFrame stopped: " + e.message, c: "e"}); renderConsole(); setStatus("onFrame stopped: " + e.message, "bad"); }
+  }
+  // cut the robot at the sketch plane so you draw on its cross-section
+  const cut = mode === "draw" && $("cutIn").checked;
+  if (cut) { const P = PLANES[draw.plane]; cutPlane.setFromNormalAndCoplanarPoint(P.n.clone().negate(), P.r(0, 0, draw.at)); }
+  robotRoot.traverse(o => { if (o.isMesh) o.material.clippingPlanes = cut ? [cutPlane] : null; });
+  if (selBox) selBox.update();
+  drawOverlay();
+  if (mode === "view") orbit.update(); else pan2d?.update();
+  renderer.render(scene, camera);
+});
+
+// ------------------------------------------------------------ projects (saved on this device) and export (file downloads)
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "untitled";
+const base = () => slug($("projName").value || "pollinator");
+function downloadBlob(blob, name) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast("Downloaded " + name);
+}
+const loadProjects = () => { try { return JSON.parse(store.get("pw-projects") || "{}"); } catch { return {}; } };
+const saveProjects = o => store.set("pw-projects", JSON.stringify(o));
+const projJson = p => JSON.stringify({name: p.name, rev: p.rev, code: p.code, units: "inches; x back from front bumper, w right of centre, z up"}, null, 2);
+$("projName").value = store.get("pw-name") || "My robot fixes";
+$("projBtn").onclick = () => { renderProjects(); $("projDlg").showModal(); };
+$("exportBtn").onclick = () => $("expDlg").showModal();
+let confirmDel = null;
+function renderProjects() {
+  const ps = Object.entries(loadProjects()).map(([id, p]) => ({id, ...p})).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  $("projList").innerHTML = ps.length ? ps.map(p => `<div class="proj"><div><b>${esc(p.name)}</b><small>Rev ${esc(p.rev)} · ${p.updated ? new Date(p.updated).toLocaleString() : ""} · ${String(p.code || "").split("\n").length} lines</small></div>
+      <button type="button" class="btn small" data-open="${esc(p.id)}">Open</button><button type="button" class="btn small" data-dl="${esc(p.id)}">Download</button><button type="button" class="btn small danger" data-del="${esc(p.id)}">${confirmDel === p.id ? "Confirm" : "Delete"}</button></div>`).join("")
+    : `<p>No saved projects yet. Name your work above and press Save.</p>`;
+}
+function openProject(p) {
+  $("projName").value = p.name || "Imported"; store.set("pw-name", $("projName").value);
+  undoStack.push(code.value); code.value = p.code || ""; gutter();
+  if (p.rev && p.rev !== rev && "ABC".includes(p.rev)) loadRev(p.rev); else run();
+  toast(`Opened "${$("projName").value}"`);
+}
+$("projSave").onclick = () => {
+  const name = $("projName").value.trim() || "Untitled", ps = loadProjects(); store.set("pw-name", name);
+  ps[slug(name)] = {name, rev, code: code.value, updated: Date.now()}; saveProjects(ps); renderProjects();
+  toast(`Saved "${name}" on this device`);
+};
+$("projList").onclick = e => {
+  const ps = loadProjects(), o = e.target.closest("[data-open]"), dlb = e.target.closest("[data-dl]"), d = e.target.closest("[data-del]");
+  if (o) { $("projDlg").close(); openProject(ps[o.dataset.open]); }
+  if (dlb) { const p = ps[dlb.dataset.dl]; downloadBlob(new Blob([projJson(p)], {type: "application/json"}), slug(p.name) + ".json"); }
+  if (d) {
+    if (confirmDel !== d.dataset.del) { confirmDel = d.dataset.del; return renderProjects(); }
+    confirmDel = null; delete ps[d.dataset.del]; saveProjects(ps); renderProjects(); toast("Deleted");
+  }
+};
+$("importIn").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try { const p = JSON.parse(await f.text()); if (typeof p.code !== "string") throw new Error("that file has no code in it"); $("projDlg").close(); openProject(p); }
+  catch (err) { toast("Couldn't import: " + err.message); }
+};
+$("expJson").onclick = () => downloadBlob(new Blob([projJson({name: $("projName").value, rev, code: code.value})], {type: "application/json"}), base() + ".json");
+function exportGlb(objs, file) {
+  robotRoot.traverse(o => { if (o.isMesh) o.material.clippingPlanes = null; });
+  new GLTFExporter().parse(objs, buf => downloadBlob(new Blob([buf], {type: "model/gltf-binary"}), file), e => toast("Export failed: " + e.message), {binary: true, onlyVisible: true});
+}
+$("expAll").onclick = () => exportGlb([robotRoot, userGroup], base() + "-rev" + rev + ".glb");
+$("expMine").onclick = () => userParts.length ? exportGlb([userGroup], base() + "-parts.glb") : toast("You haven't made any parts yet");
+
+let toastT = 0;
+function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 3200); }
+
+// ------------------------------------------------------------ start
+resize(); gutter(); renderConsole();
+loadRev(rev);
+</script>
+
+</body></html>
