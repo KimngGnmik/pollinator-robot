@@ -266,11 +266,11 @@ let curLine=0,selLine=0;
 function handle(pivot,parent){return{pos:[0,0,0],rot:[0,0,0],pivot:pivot.slice(),parent:parent||null,line:curLine}}
 
 function makeAPI(){
- scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],animate:null};
+ scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],vars:{},collecting:true,animate:null};
  const solid=(faces,o,pivot)=>{o=o||{};const h=handle(o.pivot||pivot,o.part);scene.handles.push(h);
   const all=[].concat(...faces),sc=cen(all);
   scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit});return h};
- const api={C,__L(n){curLine=n},
+ const api={C,__L(n){curLine=n},__V(n,f){try{const v=f();if(scene.collecting)(scene.vars[n]=scene.vars[n]||[]).push(v);else scene.vars[n]=[v]}catch(e){}},
   sheet(o){Object.assign(scene,o||{})},
   part(o){o=o||{};const h=handle(o.pivot||[0,0,0],o.part);scene.handles.push(h);return h},
   box(x,y,z,w,d,h,o){const P=(a,b,c)=>[x+a,y+b,z+c];
@@ -283,10 +283,10 @@ function makeAPI(){
   sphere(x,y,z,r,o){o=o||{};const h=handle(o.pivot||[x,y,z],o.part);scene.handles.push(h);scene.solids.push({h,line:curLine,kind:'sphere',sphere:[x,y,z,r],fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha});return h},
   prism(prof,y,d,o){o=o||{};const ax=o.axis||'y',M=(p,t)=>ax==='y'?[p[0],t,p[1]]:ax==='x'?[t,p[0],p[1]]:[p[0],p[1],t];
    const A=prof.map(p=>M(p,y)),B=prof.map(p=>M(p,y+d)),f=[A,B];for(let i=0;i<A.length;i++){const j=(i+1)%A.length;f.push([A[i],A[j],B[j],B[i]])}return solid(f,Object.assign({kind:'prism'},o),M(prof[0],y))},
-  line(a,b,o){scene.lines.push({a,b,o:o||{}})},
-  dim(a,b,o){scene.dims.push({a,b,o:o||{}})},
-  leader(p,t,dx,dy){scene.leaders.push({p,t,dx:dx==null?40:dx,dy:dy==null?-40:dy})},
-  text(p,t,o){scene.texts.push({p,t,o:o||{}})},
+  line(a,b,o){scene.lines.push({a,b,o:o||{},line:curLine})},
+  dim(a,b,o){scene.dims.push({a,b,o:o||{},line:curLine})},
+  leader(p,t,dx,dy){scene.leaders.push({p,t,dx:dx==null?40:dx,dy:dy==null?-40:dy,line:curLine})},
+  text(p,t,o){scene.texts.push({p,t,o:o||{},line:curLine})},
   animate(fn){scene.animate=fn}};
  api.limit=(x,y,z,w,d,h,o)=>api.box(x,y,z,w,d,h,Object.assign({fill:'#ffffff',alpha:.12},o,{limit:true}));
  return api}
@@ -352,11 +352,24 @@ function threeInit(){
 function applyHighlight(){if(!T)return;const acc=new THREE.Color(col('var(--accent)'));T.meshes.forEach(({mesh,edges,so})=>{const on=selLine&&so.line===selLine&&!measuring;mesh.material.emissive=on?acc:new THREE.Color(0);mesh.material.emissiveIntensity=on?.45:0;if(edges){edges.material.opacity=on?1:.25;edges.material.color.set(on?acc:0x000000)}})}
 // the status strip: where the part(s) a line made actually ended up, after all the maths, moves and rotations
 const num=v=>{const r=scene.units==='mm'?(Math.round(v*10)/10).toFixed(1):(Math.round(v*100)/100).toFixed(2);return(+r===0?r.replace('-',''):r).replace('-','−')};
-function describe(line){const items=scene.solids.filter(s=>s.line===line);const src=$('src').value.split('\n')[line-1]||'';
- if(!items.length){$('status').innerHTML=`<b>line ${line}</b> · no part made here · <span>${src.trim().replace(/</g,'&lt;').slice(0,90)}</span>`;return}
- let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];items.forEach(s=>{const e=extOf(s);for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],e.lo[i]);hi[i]=Math.max(hi[i],e.hi[i])}});
- const kinds=[...new Set(items.map(i=>i.kind))].join(', ');
- $('status').innerHTML=`<b>line ${line}</b> · ${items.length>1?items.length+' parts ('+kinds+')':kinds} · `+['x','y','z'].map((a,i)=>`${a} ${num(lo[i])}→${num(hi[i])}`).join(' · ')}
+const P3=p=>'('+p.map(num).join(', ')+')';
+function val(v){if(typeof v==='number')return Number.isInteger(v)?String(v).replace('-','−'):num(v);
+ if(typeof v==='string')return JSON.stringify(v.length>28?v.slice(0,28)+'…':v);if(typeof v==='boolean'||v==null)return String(v);
+ if(Array.isArray(v))return v.length<=4&&v.every(x=>typeof x==='number')?'['+v.map(val).join(', ')+']':'list of '+v.length;
+ if(typeof v==='function')return 'function';if(v.pos&&v.rot)return 'a part';return 'object'}
+function describe(line){const items=scene.solids.filter(s=>s.line===line);const src=$('src').value.split('\n')[line-1]||'',st=$('status'),b=`<b>line ${line}</b> · `,esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+ if(items.length){let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];items.forEach(s=>{const e=extOf(s);for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],e.lo[i]);hi[i]=Math.max(hi[i],e.hi[i])}});
+  const kinds=[...new Set(items.map(i=>i.kind))].join(', ');
+  st.innerHTML=b+(items.length>1?items.length+' parts ('+kinds+')':kinds)+' · '+['x','y','z'].map((a,i)=>`${a} ${num(lo[i])}→${num(hi[i])}`).join(' · ');return}
+ const len=(a,c)=>num(Math.hypot(c[0]-a[0],c[1]-a[1],c[2]-a[2])),bits=[];
+ scene.dims.filter(d=>d.line===line).forEach(d=>bits.push('dim · '+P3(d.a)+' → '+P3(d.b)+' · '+len(d.a,d.b)+' long'+(d.o.text?' · label “'+esc(d.o.text)+'”':'')));
+ scene.lines.filter(l=>l.line===line).forEach(l=>bits.push('line · '+P3(l.a)+' → '+P3(l.b)+' · '+len(l.a,l.b)+' long'));
+ scene.leaders.filter(l=>l.line===line).forEach(l=>bits.push('leader “'+esc(l.t)+'” at '+P3(l.p)));
+ scene.texts.filter(t=>t.line===line).forEach(t=>bits.push('text “'+esc(t.t)+'” at '+P3(t.p)));
+ const runs=scene.vars[line];if(runs&&runs.length){const names=Object.keys(runs[0]);
+  bits.push(names.map(k=>{const vs=[...new Set(runs.map(r=>val(r[k])))];return esc(k)+' = '+esc(vs.slice(0,4).join(' / ')+(vs.length>4?' / …':''))}).join(' · ')+(runs.length>1&&names.some(k=>new Set(runs.map(r=>val(r[k]))).size>1)?' (per loop pass)':''))}
+ if(bits.length){st.innerHTML=b+bits.join(' · ');return}
+ st.innerHTML=b+(src.trim()?(/^\s*\/\//.test(src)?'comment':'no part made here')+' · <span>'+esc(src.trim()).slice(0,90)+'</span>':'blank line')}
 function select(line,fromViewer){selLine=line;applyHighlight();describe(line);if(MODE!=='3d')render();
  if(fromViewer){const lines=$('src').value.split('\n');let a=0;for(let i=0;i<line-1;i++)a+=lines[i].length+1;const ta=$('src');ta.setSelectionRange(a,a+lines[line-1].length);
   if(!fromViewer.touch)ta.focus({preventScroll:true});const lh=parseFloat(getComputedStyle(ta).lineHeight)||19.5;ta.scrollTop=Math.max(0,(line-4)*lh)}}
@@ -516,11 +529,22 @@ function toSVG(){const w=stage.clientWidth,h=stage.clientHeight;buildGeo();const
 // user code runs as an injected inline script (no eval, so it works under the page's CSP)
 // prepend __L(n) at the start of each line that begins outside ( ) [ ] and strings, so parts remember their source line
 function instrument(src){const lines=src.split('\n');let depth=0,str=null,out=[];
- for(let i=0;i<lines.length;i++){const ln=lines[i];out.push((depth===0&&!str?'__L('+(i+1)+');':'')+ln);
+ for(let i=0;i<lines.length;i++){const ln=lines[i],start0=depth===0&&!str;let cut=ln.length;
   for(let k=0;k<ln.length;k++){const ch=ln[k];if(str){if(ch==='\\'){k++;continue}if(ch===str)str=null;continue}
-   if(ch==='/'&&ln[k+1]==='/')break;if(ch==='"'||ch==="'"||ch==='`'){str=ch;continue}if(ch==='('||ch==='[')depth++;else if(ch===')'||ch===']')depth=Math.max(0,depth-1)}
-  if(str&&str!=='`')str=null}
+   if(ch==='/'&&ln[k+1]==='/'){cut=k;break}if(ch==='"'||ch==="'"||ch==='`'){str=ch;continue}if(ch==='('||ch==='[')depth++;else if(ch===')'||ch===']')depth=Math.max(0,depth-1)}
+  if(str&&str!=='`')str=null;
+  const pre=start0?'__L('+(i+1)+');':'',code=ln.slice(0,cut),m=code.match(/^\s*(?:const|let|var)\s+/);
+  // a complete `const/let/var` line: afterwards, note its values so the status strip can show them
+  if(start0&&depth===0&&!str&&m&&!/[,(\[{=+\-*\/%&|?:.]$/.test(code.trimEnd())){const names=declNames(code.slice(m[0].length));
+   if(names.length){out.push(pre+code+';__V('+(i+1)+',()=>({'+names.join(',')+'}))'+ln.slice(cut));continue}}
+  out.push(pre+ln)}
  return out.join('\n')}
+function declNames(s){const names=[];let d=0,q=null,expect=true;
+ for(let k=0;k<s.length;k++){const ch=s[k];if(q){if(ch==='\\'){k++;continue}if(ch===q)q=null;continue}
+  if(ch==='"'||ch==="'"||ch==='`'){q=ch;expect=false;continue}if('([{'.includes(ch)){d++;expect=false;continue}if(')]}'.includes(ch)){d--;continue}
+  if(ch===','&&d===0){expect=true;continue}
+  if(expect&&d===0){const mm=s.slice(k).match(/^\s*([A-Za-z_$][\w$]*)\s*=(?!=)/);if(mm){names.push(mm[1]);k+=mm[0].length-1;expect=false;continue}if(!/\s/.test(ch))expect=false}}
+ return names}
 function execUser(src,api){try{execRaw(instrument(src),api)}catch(e){if(e instanceof SyntaxError){curLine=0;execRaw(src,api)}else throw e}}
 function execRaw(src,api){const names=Object.keys(api);window.__dpApi=api;window.__dpErr=null;let winErr=null;
  const onerr=e=>{winErr=e.error||new Error(e.message);e.preventDefault()};window.addEventListener('error',onerr);
@@ -529,8 +553,8 @@ function execRaw(src,api){const names=Object.keys(api);window.__dpApi=api;window
  document.head.appendChild(s);s.remove();window.removeEventListener('error',onerr);
  const e=window.__dpErr||winErr;window.__dpErr=null;if(e){e.message=String(e.message).replace(/^Failed to execute 'appendChild' on 'Node': /,'Syntax: ');throw e}}
 function run(refit){const src=$('src').value;$('err').textContent='';
- try{const api=makeAPI();execUser(src,api);try{localStorage.setItem('draftpad.src',src)}catch(e){}}
- catch(e){$('err').textContent=e.message;if(!scene)scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],animate:null}}
+ try{const api=makeAPI();execUser(src,api);scene.collecting=false;try{localStorage.setItem('draftpad.src',src)}catch(e){}}
+ catch(e){$('err').textContent=e.message;if(scene)scene.collecting=false;if(!scene)scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],animate:null}}
  $('playG').hidden=!scene.animate;tAnim=0;if(scene.animate){try{scene.animate(0)}catch(e){$('err').textContent=e.message}}
  try{checkLimits()}catch(e){}
  if(T){if(refit)T.fitPending=true;threeBuild()}
