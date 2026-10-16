@@ -441,13 +441,19 @@ function buildGeo(){
    if(!s.limit)triFan(f).forEach(t=>{t.forEach(k=>{pos.push(...pts[k]);nrm.push(...n);colr.push(...c)});tris.push({p:t.map(k=>pts[k]),n,c:s.fill})});   // a limit box is drawn as an outline only
    for(let i=0;i<pts.length;i++)edge.push(...pts[i],...pts[(i+1)%pts.length])})});
  G={pos:new Float32Array(pos),nrm:new Float32Array(nrm),col:new Float32Array(colr),edge:new Float32Array(edge),tris,verts,n:pos.length/3,ne:edge.length/3}}
-function frame(w,h){
- const V=views[VIEW];let xs=[],ys=[],ds=[];
- const add=p=>{const q=V.p(...p);xs.push(q[0]);ys.push(q[1]);ds.push(V.d(...p))};
- G.verts.forEach(add);[scene.lines.map(l=>[l.a,l.b]),scene.dims.map(d=>[d.a,d.b])].flat(2).forEach(add);
- if(!xs.length){xs=[0];ys=[0];ds=[0]}
- const cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2,bw=Math.max(...xs)-Math.min(...xs)||1,bh=Math.max(...ys)-Math.min(...ys)||1;
- const S=Math.min((w-180)/bw,(h-150)/bh)*zoom,dmin=Math.min(...ds)-1,dmax=Math.max(...ds)+1;
+// The sheet's framing (zoom, centre, depth range) for the current view. It's worked out once per run, over the whole
+// animation (sampled for 6 s), so moving parts don't make the sheet re-zoom and shake every frame.
+function viewBounds(){scene.vb=scene.vb||{};if(scene.vb[VIEW])return scene.vb[VIEW];
+ const V=views[VIEW];let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9,d0=1e9,d1=-1e9;
+ const add=p=>{const q=V.p(...p),d=V.d(...p);if(q[0]<x0)x0=q[0];if(q[0]>x1)x1=q[0];if(q[1]<y0)y0=q[1];if(q[1]>y1)y1=q[1];if(d<d0)d0=d;if(d>d1)d1=d};
+ const sample=()=>{scene.solids.forEach(s=>{if(s.sphere){const c=xf(s.sphere.slice(0,3),s.h),r=s.sphere[3];for(const a of[-r,r])for(const b of[-r,r])for(const e of[-r,r])add([c[0]+a,c[1]+b,c[2]+e])}
+   else s.faces.forEach(f=>f.pts.forEach(p=>add(xf(p,s.h))))});
+  scene.lines.forEach(l=>{add(l.a);add(l.b)});scene.dims.forEach(d=>{add(d.a);add(d.b)})};
+ if(scene.animate){const t0=tAnim;for(let k=0;k<=24;k++){try{scene.animate(k*0.25)}catch(e){}sample()}try{scene.animate(t0)}catch(e){}}else sample();
+ if(x0>x1){x0=y0=d0=0;x1=y1=d1=1}
+ return scene.vb[VIEW]={x0,x1,y0,y1,d0,d1}}
+function frame(w,h){const V=views[VIEW],B=viewBounds(),cx=(B.x0+B.x1)/2,cy=(B.y0+B.y1)/2,bw=B.x1-B.x0||1,bh=B.y1-B.y0||1;
+ const S=Math.min((w-180)/bw,(h-150)/bh)*zoom,dmin=B.d0-1,dmax=B.d1+1;
  return{V,S,cx,cy,dmin,dmax,T:p=>{const q=V.p(...p);return[w/2+(q[0]-cx)*S,h/2-20+(q[1]-cy)*S]}}}
 const gl=glc.getContext('webgl',{antialias:true,alpha:true,preserveDrawingBuffer:true});
 let prog,loc,bufs;
