@@ -93,6 +93,7 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
       <code>animate(t =&gt; { … })</code> runs every frame with t in seconds; change <code>pos</code> and <code>rot</code> inside it.<br>
       Selection: tap a part in the viewer to jump to its line; put the cursor on a line to highlight what it made.<br>
       <code>limit(x,y,z, w,d,h)</code> or <code>box(…, {limit:true})</code> marks a size limit (e.g. the 18 in sizing box): anything sticking out of it turns red<br>
+      <code>pollen(x,y)</code> · <code>nectar(x,y)</code> the game pieces (Ø2.80 / Ø3.62, resting on the tiles; give a 3rd number for a height). Add <code>field:true</code> to any part that isn't the robot: limits ignore it<br>
       <b>Measure</b> (above the view): tap two points; it snaps to corners, edge midpoints and the centres of round ends. <i>Keep as dim()</i> adds it to your code.<br>
       <code>line(p1,p2,{dash,color})</code> · <code>dim(p1,p2,{off,text})</code> · <code>leader(p,'text',dx,dy)</code> · <code>text(p,'text')</code>
     </details>
@@ -272,7 +273,7 @@ function makeAPI(){
  scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],vars:{},collecting:true,animate:null};
  const solid=(faces,o,pivot)=>{o=o||{};const h=handle(o.pivot||pivot,o.part);scene.handles.push(h);
   const all=[].concat(...faces),sc=cen(all);
-  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit,args:o.args,axis:o.axisName});return h};
+  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit,field:!!o.field,args:o.args,axis:o.axisName});return h};
  const api={C,__L(n){curLine=n},__V(n,f){try{const v=f();if(scene.collecting)(scene.vars[n]=scene.vars[n]||[]).push(v);else scene.vars[n]=[v]}catch(e){}},
   sheet(o){Object.assign(scene,o||{})},
   part(o){o=o||{};const h=handle(o.pivot||[0,0,0],o.part);scene.handles.push(h);return h},
@@ -283,7 +284,7 @@ function makeAPI(){
   cyl(x,y,z,r,len,o){o=o||{};const ax=o.axis||'z',N=36,ring=(t)=>{const a=[];for(let i=0;i<N;i++){const q=i/N*2*Math.PI,c=r*Math.cos(q),s=r*Math.sin(q);
     a.push(ax==='z'?[x+c,y+s,z+t]:ax==='x'?[x+t,y+c,z+s]:[x+c,y+t,z+s])}return a};
    const A=ring(0),B=ring(len),f=[A,B.slice().reverse()];for(let i=0;i<N;i++)f.push([A[i],A[(i+1)%N],B[(i+1)%N],B[i]]);return solid(f,Object.assign({kind:'cyl'},o,{args:[x,y,z,r,len],axisName:ax}),[x,y,z])},
-  sphere(x,y,z,r,o){o=o||{};const h=handle(o.pivot||[x,y,z],o.part);scene.handles.push(h);scene.solids.push({h,line:curLine,kind:'sphere',sphere:[x,y,z,r],fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha});return h},
+  sphere(x,y,z,r,o){o=o||{};const h=handle(o.pivot||[x,y,z],o.part);scene.handles.push(h);scene.solids.push({h,line:curLine,kind:'sphere',sphere:[x,y,z,r],fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,field:!!o.field});return h},
   prism(prof,y,d,o){o=o||{};const ax=o.axis||'y',M=(p,t)=>ax==='y'?[p[0],t,p[1]]:ax==='x'?[t,p[0],p[1]]:[p[0],p[1],t];
    const A=prof.map(p=>M(p,y)),B=prof.map(p=>M(p,y+d)),f=[A,B];for(let i=0;i<A.length;i++){const j=(i+1)%A.length;f.push([A[i],A[j],B[j],B[i]])}return solid(f,Object.assign({kind:'prism'},o),M(prof[0],y))},
   line(a,b,o){scene.lines.push({a,b,o:o||{},line:curLine})},
@@ -292,6 +293,9 @@ function makeAPI(){
   text(p,t,o){scene.texts.push({p,t,o:o||{},line:curLine})},
   animate(fn){scene.animate=fn}};
  api.limit=(x,y,z,w,d,h,o)=>api.box(x,y,z,w,d,h,Object.assign({fill:'#ffffff',alpha:.12},o,{limit:true}));
+ // BIOBUZZ scoring elements (official CAD): pollen Ø2.80 in, nectar Ø3.62 in. Not part of the robot, so never checked against a limit box.
+ const ball=(r,fill)=>(x,y,z,o)=>{const k=scene.units==='mm'?25.4:1;return api.sphere(x,y,z==null?r*k:z,r*k,Object.assign({fill},o,{field:true}))};
+ api.pollen=ball(1.4,C.yellow);api.nectar=ball(1.81,C.red);
  return api}
 
 /* ---------- size limit: parts outside a limit box turn red ---------- */
@@ -305,7 +309,7 @@ function checkLimits(){
  scene.over=new Set();w.dataset.line='';
  if(!lim.length){w.hidden=true;return before!==''}
  const B=lim.map(extOf),tol=1e-6,out=[];
- scene.solids.forEach(s=>{if(s.limit)return;const e=extOf(s);
+ scene.solids.forEach(s=>{if(s.limit||s.field)return;const e=extOf(s);   // field:true parts (pollen, nectar, field pieces) aren't the robot
   if(B.some(b=>[0,1,2].every(i=>e.lo[i]>=b.lo[i]-tol&&e.hi[i]<=b.hi[i]+tol)))return;
   scene.over.add(s);const b=B[0];let worst=0,msg='';
   for(let i=0;i<3;i++){const lo=b.lo[i]-e.lo[i],hi=e.hi[i]-b.hi[i];if(lo>worst){worst=lo;msg=fmt(lo)+' past the '+SIDE[i][0]}if(hi>worst){worst=hi;msg=fmt(hi)+' past the '+SIDE[i][1]}}
