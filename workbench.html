@@ -877,7 +877,7 @@ function visibleHit(e) {
 }
 renderer.domElement.addEventListener("pointerup", e => {
   if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6 || performance.now() - downAt.t > 400) return;
-  if (mode === "measure") return measureTap(e);
+  if (mode === "measure") { if (e.pointerType === "mouse") measureTap(e); return; }
   if (mode !== "view") return;
   const hit = visibleHit(e);
   if (!hit) return select(null);
@@ -915,6 +915,8 @@ function setMode(m) {
   if (m === "draw") { camera = ortho; orbit.enabled = false; setPlane(draw.plane); }
   else { camera = persp; if (pan2d) pan2d.enabled = false; sketchGroup.clear(); cancelSketch(); }
   orbit.enabled = m === "view" || m === "measure";
+  orbit.touches = m === "measure" ? {ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE} : {ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN};
+  if (m !== "measure") { aim = null; if (typeof meas !== "undefined") { meas.hover = null; meas.cursor = null; } }
   if (m === "markup") {            // ink is drawn on the screen, so it belongs to one camera position: go back to it
     if (inkStrokes.length && inkPose) { persp.position.copy(inkPose.pos); orbit.target.copy(inkPose.target); persp.lookAt(orbit.target); }
     else inkPose = {pos: persp.position.clone(), target: orbit.target.clone()};
@@ -1122,7 +1124,7 @@ $("finDiscard").onclick = () => {
 $("finish").onsubmit = e => { e.preventDefault(); cancelSketch(); };
 function readout(p) {
   const el = $("readout");
-  if (mode !== "draw" || !p) { el.innerHTML = mode === "measure" ? "Measure: tap two points · drag to turn the view · inches" : mode === "markup" ? "Markup is notes only, it doesn't change the code · Save image keeps them" : mode === "draw" ? "Draw with the pencil · two fingers pan and zoom · each shape becomes a line of code" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
+  if (mode !== "draw" || !p) { el.innerHTML = mode === "measure" ? "Measure: touch to aim, lift to place · mouse: hover, then click · two fingers or mouse-drag turn the view · inches" : mode === "markup" ? "Markup is notes only, it doesn't change the code · Save image keeps them" : mode === "draw" ? "Draw with the pencil · two fingers pan and zoom · each shape becomes a line of code" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
   const P = PLANES[draw.plane];
   el.innerHTML = `<b>${P.u}</b> ${p[0].toFixed(3)}  <b>${P.v}</b> ${p[1].toFixed(3)}  <b>${P.d}</b> ${(+draw.at).toFixed(3)} in`;
 }
@@ -1209,8 +1211,10 @@ function snapAt(e) {
   let best = null, bd = 18;
   const o = hit.object, pos = o.geometry.attributes.position, v = new THREE.Vector3(), stride = Math.max(1, Math.floor(pos.count / 30000));
   o.updateWorldMatrix(true, false);
+  const eye = camera.position, reach = hit.distance + 0.25;  // only corners on the side facing you, not ones hidden behind the part
   for (let i = 0; i < pos.count; i += stride) {            // nearest corner of the part you tapped
     v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+    if (v.distanceTo(eye) > reach) continue;
     const q = scr(v), d = Math.hypot(q[0] - mx, q[1] - my);
     if (d < bd) { bd = d; best = {p: v.clone(), k: "corner"}; }
   }
@@ -1221,25 +1225,56 @@ function snapAt(e) {
     if (d < 30 && d <= bd + 12) best = {p: c, k: "centre"};   // near the middle, the centre beats a corner that's only a little closer
     if (best) best.name = rec.name;
   }
-  return best || {p: hit.point.clone(), k: "surface", name: rec && rec.name};
+  return Object.assign(best || {p: hit.point.clone(), k: "surface", name: rec && rec.name}, {obj: o});
 }
-function measureTap(e) {
-  const s = snapAt(e);
-  if (!s) return toast("Tap on a part to measure from it");
+function placePoint(s) {
+  if (!s) return toast("Nothing there. Aim at a part.");
   if (meas.pts.length >= 2) meas.pts = [];
   meas.pts.push(s); measInfo();
 }
+const measureTap = e => placePoint(snapAt(e));
+const localXY = e => { const b = renderer.domElement.getBoundingClientRect(); return {x: e.clientX - b.left, y: e.clientY - b.top, type: e.pointerType}; };
+// Mouse (and a hovering Pencil): the part under the pointer lights up before you click.
 let measHoverT = 0;
 renderer.domElement.addEventListener("pointermove", e => {
-  if (mode !== "measure" || e.pointerType === "touch" || e.buttons) return;
-  const now = performance.now(); if (now - measHoverT < 40) return; measHoverT = now;
-  meas.hover = snapAt(e);
+  if (mode !== "measure" || e.pointerType === "touch" || e.buttons || aim) return;
+  const now = performance.now(); if (now - measHoverT < 35) return; measHoverT = now;
+  meas.hover = snapAt(e); meas.cursor = localXY(e);
 });
-renderer.domElement.addEventListener("pointerleave", () => { meas.hover = null; });
+renderer.domElement.addEventListener("pointerleave", () => { if (!aim) { meas.hover = null; meas.cursor = null; } });
+// Finger or Pencil on the screen: touch to see what you're on, slide to adjust, lift to place. Two fingers turn the view.
+let aim = null;
+stage.addEventListener("pointerdown", e => {
+  if (mode !== "measure" || e.target !== renderer.domElement || e.pointerType === "mouse") return;
+  if (aim) { aim = null; meas.hover = null; meas.cursor = null; return; }      // a second finger: turning the view, not measuring
+  if (e.pointerType === "pen") { e.stopPropagation(); try { renderer.domElement.setPointerCapture(e.pointerId); } catch {} }
+  aim = {id: e.pointerId}; meas.hover = snapAt(e); meas.cursor = localXY(e);
+}, true);
+stage.addEventListener("pointermove", e => {
+  if (mode !== "measure" || !aim || e.pointerId !== aim.id) return;
+  if (e.pointerType === "pen") e.stopPropagation();
+  const now = performance.now(); if (now - measHoverT < 30) return; measHoverT = now;
+  meas.hover = snapAt(e); meas.cursor = localXY(e);
+}, true);
+const aimEnd = place => e => {
+  if (!aim || e.pointerId !== aim.id) return;
+  const h = meas.hover; aim = null; meas.hover = null; meas.cursor = null;
+  if (place) placePoint(h);
+};
+stage.addEventListener("pointerup", aimEnd(true), true);
+stage.addEventListener("pointercancel", aimEnd(false), true);
+// the part being aimed at, drawn see-through on top so it shows even behind other parts
+const hlMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({transparent: true, opacity: 0.4, depthTest: false, depthWrite: false}));
+hlMesh.matrixAutoUpdate = false; hlMesh.renderOrder = 7; hlMesh.visible = false; scene.add(hlMesh);
+function updateHighlight() {
+  const o = mode === "measure" && meas.hover && meas.hover.obj;
+  hlMesh.visible = !!o; if (!o) return;
+  hlMesh.geometry = o.geometry; o.updateWorldMatrix(true, false); hlMesh.matrix.copy(o.matrixWorld); hlMesh.material.color.set(ACC);
+}
 function measInfo() {
   const el = $("measBar"), [a, b] = meas.pts, where = s => `[${robotXYZ(s.p).map(n => n3(n)).join(", ")}]${s.name ? ` (${esc(s.name)} ${s.k === "centre" ? "centre" : s.k === "corner" ? "corner" : "surface"})` : ""}`;
-  if (!a) { el.innerHTML = `<span>Tap a point on the robot. It snaps to corners and to part centres (tap near the middle of a wheel for its axle).</span>`; return; }
-  if (!b) { el.innerHTML = `<span>From ${where(a)}. Tap a second point.</span><button class="btn small" id="measClear">Clear</button>`; $("measClear").onclick = () => { meas.pts = []; measInfo(); }; return; }
+  if (!a) { el.innerHTML = `<span>Touch the robot to see what you're on, slide to adjust, lift to place. Near the middle of a wheel or roller it snaps to the axle. Two fingers turn the view.</span>`; return; }
+  if (!b) { el.innerHTML = `<span>From ${where(a)}. Now the second point.</span><button class="btn small" id="measClear">Clear</button>`; $("measClear").onclick = () => { meas.pts = []; measInfo(); }; return; }
   const A = robotXYZ(a.p), B = robotXYZ(b.p), d = a.p.distanceTo(b.p);
   el.innerHTML = `<b>${d.toFixed(3)}"</b><span class="d">Δx ${n3(B[0] - A[0])}  Δw ${n3(B[1] - A[1])}  Δz ${n3(B[2] - A[2])}</span>
     <button class="btn small primary" id="measKeep">Keep in code</button><button class="btn small" id="measClear">Clear</button>`;
@@ -1256,8 +1291,22 @@ function drawMeasure(x) {
     else { x.beginPath(); x.arc(q[0], q[1], m.k === "surface" ? 4 : 5.5, 0, 7); x.fill(); x.stroke(); }
     x.globalAlpha = 1;
   };
-  if (meas.hover) mark(meas.hover, 0.55);
+  if (meas.hover) mark(meas.hover, 0.8);
   meas.pts.forEach(m => mark(m, 1));
+  const tag = (t, X, Y) => { x.font = "500 13px " + css("--f-mono"); const tw = x.measureText(t).width; x.fillStyle = css("--fg"); x.fillRect(X - 6, Y - 12, tw + 12, 22); x.fillStyle = css("--bg"); x.textBaseline = "middle"; x.fillText(t, X, Y); };
+  if (meas.hover && meas.pts.length === 1) {               // live preview from the first point
+    const a = S(meas.pts[0].p), b = S(meas.hover.p);
+    if (a && b) { x.setLineDash([6, 5]); x.strokeStyle = ACC; x.lineWidth = 2; x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(b[0], b[1]); x.stroke(); x.setLineDash([]);
+      tag(meas.pts[0].p.distanceTo(meas.hover.p).toFixed(3) + '"', (a[0] + b[0]) / 2 - 20, (a[1] + b[1]) / 2); }
+  }
+  if (meas.hover && meas.cursor) {                         // what you're on, next to the pointer (above a finger, so your hand doesn't cover it)
+    const q = S(meas.hover.p), c = meas.cursor, up = c.type === "touch" || c.type === "pen";
+    const label = {corner: "Corner", centre: "Centre", surface: "Surface"}[meas.hover.k] + (meas.hover.name ? " · " + meas.hover.name : "");
+    x.font = "500 13px " + css("--f-mono");
+    const tw = x.measureText(label).width, lx = Math.min(Math.max(8, c.x - (up ? tw / 2 : -18)), w - tw - 16), ly = up ? Math.max(20, c.y - 70) : Math.min(h - 20, c.y + 26);
+    if (q) { x.strokeStyle = css("--fg"); x.lineWidth = 1; x.beginPath(); x.moveTo(q[0], q[1]); x.lineTo(lx + tw / 2, ly); x.stroke(); }
+    tag(label, lx, ly);
+  }
   if (meas.pts.length === 2) {
     const a = S(meas.pts[0].p), b = S(meas.pts[1].p); if (!a || !b) return;
     x.strokeStyle = ACC; x.lineWidth = 2.5; x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(b[0], b[1]); x.stroke();
@@ -1281,6 +1330,7 @@ renderer.setAnimationLoop(() => {
   if (selBox) selBox.update();
   drawOverlay();
   if (mode === "view" || mode === "measure") orbit.update(); else pan2d?.update();
+  updateHighlight();
   renderer.render(scene, camera);
 });
 

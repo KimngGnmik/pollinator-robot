@@ -349,7 +349,7 @@ function threeInit(){
  const ground=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshStandardMaterial({roughness:.95,metalness:0}));ground.receiveShadow=true;sc.add(ground);
  const root=new THREE.Group();sc.add(root);const notes=new THREE.Group();sc.add(notes);
  return{r,sc,cam,ctl,sun,ground,root,notes,objs:[],meshes:[],fitPending:true}}
-function applyHighlight(){if(!T)return;const acc=new THREE.Color(col('var(--accent)'));T.meshes.forEach(({mesh,edges,so})=>{const on=selLine&&so.line===selLine;mesh.material.emissive=on?acc:new THREE.Color(0);mesh.material.emissiveIntensity=on?.45:0;if(edges){edges.material.opacity=on?1:.25;edges.material.color.set(on?acc:0x000000)}})}
+function applyHighlight(){if(!T)return;const acc=new THREE.Color(col('var(--accent)'));T.meshes.forEach(({mesh,edges,so})=>{const on=selLine&&so.line===selLine&&!measuring;mesh.material.emissive=on?acc:new THREE.Color(0);mesh.material.emissiveIntensity=on?.45:0;if(edges){edges.material.opacity=on?1:.25;edges.material.color.set(on?acc:0x000000)}})}
 function describe(line){const items=scene.solids.filter(s=>s.line===line);const src=$('src').value.split('\n')[line-1]||'';
  $('status').innerHTML=items.length?`<b>line ${line}</b> · ${items.length} part${items.length>1?'s':''} (${[...new Set(items.map(i=>i.kind))].join(', ')}) · <span>${src.trim().replace(/</g,'&lt;').slice(0,90)}</span>`:`<b>line ${line}</b> · no part made here · ${src.trim().replace(/</g,'&lt;').slice(0,90)}`}
 function select(line,fromViewer){selLine=line;applyHighlight();describe(line);if(MODE!=='3d')render();
@@ -408,7 +408,7 @@ let G=null;
 function buildGeo(){
  const pos=[],nrm=[],colr=[],edge=[],tris=[];let verts=[];
  const accH=hex3(col('var(--accent)').length===7?col('var(--accent)'):'#b8402f');
- scene.solids.forEach(s=>{let c=hex3(s.fill);if(scene.over&&(scene.over.has(s)||(s.limit&&scene.over.size)))c=hex3(OVER);if(selLine&&s.line===selLine)c=c.map((v,i)=>v*.45+accH[i]*.55);
+ scene.solids.forEach(s=>{let c=hex3(s.fill);if(measuring&&measHover&&measHover.s===s){const a2=hex3(col('var(--accent2)').length===7?col('var(--accent2)'):'#2f5f9e');c=c.map((v,i)=>v*.4+a2[i]*.6)}if(scene.over&&(scene.over.has(s)||(s.limit&&scene.over.size)))c=hex3(OVER);if(selLine&&s.line===selLine)c=c.map((v,i)=>v*.45+accH[i]*.55);
   if(s.sphere){const [x0,y0,z0,r]=s.sphere,[x,y,z]=xf([x0,y0,z0],s.h),NA=28,NB=14,P=(a,b)=>{const t=a/NA*2*Math.PI,u=b/NB*Math.PI,d=[Math.cos(t)*Math.sin(u),Math.sin(t)*Math.sin(u),Math.cos(u)];return[[x+r*d[0],y+r*d[1],z+r*d[2]],d]};
    for(let a=0;a<NA;a++)for(let b=0;b<NB;b++){const q=[P(a,b),P(a+1,b),P(a+1,b+1),P(a,b+1)];[[0,1,2],[0,2,3]].forEach(t=>{t.forEach(k=>{pos.push(...q[k][0]);nrm.push(...q[k][1]);colr.push(...c)});tris.push({p:t.map(k=>q[k][0]),n:cen(t.map(k=>q[k][1])),c:s.fill})})}
    verts.push([x-r,y-r,z-r],[x+r,y+r,z+r]);return}
@@ -551,9 +551,10 @@ $('penOnly').checked=penOnly;$('penOnly').onchange=e=>setPenOnly(e.target.checke
 $('clearInk').onclick=()=>{strokes=[];drawInk()};
 
 /* ---------- measure: tap two points; snaps to corners, edge midpoints and circle centres ---------- */
-let measuring=false,meas=[],measHover=null,mDown=null,hoverT=0;
-function snapPoints(){const pts=[],seen=new Set(),add=(p,k)=>{const key=p.map(v=>Math.round(v*1e4)).join();if(!seen.has(key)){seen.add(key);pts.push({p,k})}};
- scene.solids.forEach(s=>{if(s.sphere){add(xf(s.sphere.slice(0,3),s.h),'centre');return}
+let measuring=false,meas=[],measHover=null,measCursor=null,mDown=null,hoverT=0,aim=null;
+function snapPoints(){const pts=[];
+ scene.solids.forEach(s=>{const seen=new Set(),add=(p,k)=>{const key=p.map(v=>Math.round(v*1e4)).join();if(!seen.has(key)){seen.add(key);pts.push({p,k,s})}};
+  if(s.sphere){add(xf(s.sphere.slice(0,3),s.h),'centre');return}
   s.faces.forEach(f=>{const P=f.pts.map(q=>xf(q,s.h));
    if(P.length<=8){P.forEach(q=>add(q,'corner'));P.forEach((q,i)=>{const r=P[(i+1)%P.length];add([(q[0]+r[0])/2,(q[1]+r[1])/2,(q[2]+r[2])/2],'midpoint')})}
    else add(cen(P),'centre')})});            // round faces (cylinder ends): their centre
@@ -562,35 +563,61 @@ function toScreen(){const w=stage.clientWidth,h=stage.clientHeight;
  // [x, y, nearness]: when two points land on the same spot, the one nearer the viewer wins
  if(MODE==='3d'&&T){T.cam.updateMatrixWorld();const v=new THREE.Vector3();return p=>{v.set(p[0],p[1],p[2]).project(T.cam);return v.z>1?null:[(v.x+1)/2*w,(1-v.y)/2*h,-v.z]}}
  if(!G)buildGeo();const F=frame(w,h),V=views[VIEW];return p=>{const q=F.T(p);return[q[0],q[1],V.d(...p)]}}
-function snapAt(x,y){const S=toScreen();let best=null,bd=22,bz=-Infinity;
- snapPoints().forEach(c=>{const q=S(c.p);if(!q)return;const d=Math.hypot(q[0]-x,q[1]-y)*(c.k==='midpoint'?1.2:1);
+function snapAt(x,y){const S=toScreen();let best=null,bd=22,bz=-Infinity,hit=null,cam=null,reach=Infinity;
+ if(MODE==='3d'&&T){const r=tc.getBoundingClientRect(),rc=new THREE.Raycaster();rc.setFromCamera(new THREE.Vector2(x/r.width*2-1,-(y/r.height)*2+1),T.cam);
+  hit=rc.intersectObjects(T.meshes.filter(m=>m.so.alpha>=.5).map(m=>m.mesh),false)[0];cam=T.cam.position;
+  if(hit)reach=hit.distance+Math.max(1e-6,(T.lastR||1)*0.02)}     // only points on the surface you're on, or in front of it: never ones hidden behind it
+ snapPoints().forEach(c=>{if(cam&&Math.hypot(c.p[0]-cam.x,c.p[1]-cam.y,c.p[2]-cam.z)>reach)return;const q=S(c.p);if(!q)return;const d=Math.hypot(q[0]-x,q[1]-y)*(c.k==='midpoint'?1.2:1);
   if(d<bd-1.5||(d<=bd+1.5&&best&&q[2]>bz&&d<22)){bd=Math.min(d,bd);bz=q[2];best=c}});
- if(best||MODE!=='3d'||!T)return best;
- const r=tc.getBoundingClientRect(),rc=new THREE.Raycaster();rc.setFromCamera(new THREE.Vector2(x/r.width*2-1,-(y/r.height)*2+1),T.cam);   // no corner nearby: the surface point
- const hit=rc.intersectObjects(T.meshes.map(m=>m.mesh),false)[0];return hit?{p:hit.point.toArray(),k:'surface'}:null}
+ if(best||MODE!=='3d'||!T)return best;   // no corner nearby: the surface point
+ return hit?{p:hit.point.toArray(),k:'surface',s:hit.object.userData.solid}:null}
 const r3=v=>+(+v).toFixed(3);
 function measInfo(){const el=$('measBar'),[a,b]=meas,P=s=>'['+s.p.map(r3).join(', ')+'] ('+s.k+')';
- if(!a){el.innerHTML='<span>Tap a corner, an edge or the middle of a round end. Drag to turn the view.</span>';return}
- if(!b){el.innerHTML='<span>From '+P(a)+'. Tap a second point.</span><button id="mClear">Clear</button>';$('mClear').onclick=()=>{meas=[];measInfo();render()};return}
+ if(!a){el.innerHTML='<span>Touch to see what you\'re on, slide to adjust, lift to place (with a mouse: hover, then click). It snaps to corners, edge midpoints and the centres of round ends. Two fingers turn the view.</span>';return}
+ if(!b){el.innerHTML='<span>From '+P(a)+'. Now the second point.</span><button id="mClear">Clear</button>';$('mClear').onclick=()=>{meas=[];measInfo();render()};return}
  const d=[0,1,2].map(i=>b.p[i]-a.p[i]),L=Math.hypot(...d);
  el.innerHTML='<b>'+fmt(L)+'</b><span class="d">Δx '+fmt(d[0])+'  Δy '+fmt(d[1])+'  Δz '+fmt(d[2])+'</span><button id="mKeep" class="primary">Keep as dim()</button><button id="mClear">Clear</button>';
  $('mClear').onclick=()=>{meas=[];measInfo();render()};
  $('mKeep').onclick=()=>{const t=$('src');t.value=t.value.replace(/\s*$/,'')+'\ndim(['+a.p.map(r3).join(',')+'], ['+b.p.map(r3).join(',')+'], {off:30})\n';meas=[];measInfo();run(false)}}
-function setMeasuring(v){measuring=v;$('meas').classList.toggle('on',v);$('measBar').hidden=!v;meas=[];measHover=null;
+function setMeasuring(v){measuring=v;$('meas').classList.toggle('on',v);$('measBar').hidden=!v;meas=[];measHover=null;measCursor=null;aim=null;
+ if(T){T.ctl.touches.ONE=v?null:THREE.TOUCH.ROTATE;applyHighlight()}
  if(v&&pen)$('pen').click();measInfo();render()}
 $('meas').onclick=()=>setMeasuring(!measuring);
-stage.addEventListener('pointerdown',e=>{if(measuring)mDown=[e.clientX,e.clientY]},true);
-stage.addEventListener('pointerup',e=>{if(!measuring||!mDown||e.target.closest('.measbar'))return;const moved=Math.hypot(e.clientX-mDown[0],e.clientY-mDown[1]);mDown=null;if(moved>6)return;
- const r=stage.getBoundingClientRect(),s=snapAt(e.clientX-r.left,e.clientY-r.top);
- if(!s){$('measBar').firstChild.textContent='Nothing to snap to there. Tap a corner, an edge or a round end.';return}
- if(meas.length>=2)meas=[];meas.push(s);measInfo();render()},true);
-stage.addEventListener('pointermove',e=>{if(!measuring||e.pointerType==='touch'||e.buttons)return;const now=performance.now();if(now-hoverT<40)return;hoverT=now;
- const r=stage.getBoundingClientRect();measHover=snapAt(e.clientX-r.left,e.clientY-r.top);if(MODE!=='3d')render()});
+const local=e=>{const r=stage.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,type:e.pointerType}};
+function setHover(h,c){const before=measHover&&measHover.s;measHover=h;measCursor=c;if((h&&h.s)!==before)hoverHighlight();render()}
+function placePoint(h){if(!h){$('measBar').firstChild.textContent='Nothing to snap to there. Aim at a corner, an edge or a round end.';return}
+ if(meas.length>=2)meas=[];meas.push(h);measInfo();render()}
+// mouse (and a hovering Pencil): what's under the pointer lights up; click places it, drag turns the view
+stage.addEventListener('pointerdown',e=>{if(!measuring||e.target.closest('.measbar'))return;
+ if(e.pointerType==='mouse'){mDown=[e.clientX,e.clientY];return}
+ // finger or Pencil: touch to see what you're on, slide to adjust, lift to place; a second finger turns the view instead
+ if(aim){aim=null;setHover(null,null);return}
+ if(e.pointerType==='pen'||MODE!=='3d')e.stopPropagation();
+ aim={id:e.pointerId};const c=local(e);setHover(snapAt(c.x,c.y),c)},true);
+stage.addEventListener('pointermove',e=>{if(!measuring)return;const now=performance.now();
+ if(aim){if(e.pointerId!==aim.id)return;if(e.pointerType==='pen')e.stopPropagation();if(now-hoverT<30)return;hoverT=now;const c=local(e);setHover(snapAt(c.x,c.y),c);return}
+ if(e.pointerType==='touch'||e.buttons||now-hoverT<35)return;hoverT=now;const c=local(e);setHover(snapAt(c.x,c.y),c)},true);
+stage.addEventListener('pointerup',e=>{if(!measuring)return;
+ if(aim){if(e.pointerId!==aim.id)return;const h=measHover;aim=null;setHover(null,null);placePoint(h);return}
+ if(!mDown||e.target.closest('.measbar'))return;const moved=Math.hypot(e.clientX-mDown[0],e.clientY-mDown[1]);mDown=null;if(moved>6)return;
+ const c=local(e);placePoint(snapAt(c.x,c.y))},true);
+stage.addEventListener('pointercancel',e=>{if(aim&&e.pointerId===aim.id){aim=null;setHover(null,null)}},true);
+stage.addEventListener('pointerleave',()=>{if(measuring&&!aim&&measHover)setHover(null,null)});
+// light up the part being aimed at (3D: glow; schematic: tint, see buildGeo)
+function hoverHighlight(){if(!T)return;applyHighlight();const s=measHover&&measHover.s;if(!s)return;const c=new THREE.Color(col('var(--accent2)'));
+ T.meshes.forEach(({mesh,so})=>{if(so===s){mesh.material.emissive=c;mesh.material.emissiveIntensity=.55}})}
 function drawMeasure(c){if(!measuring)return;const S=toScreen(),acc=col('var(--accent2)');
  const mark=(m,alpha)=>{const q=S(m.p);if(!q)return;c.globalAlpha=alpha;c.lineWidth=2;
   if(m.k==='centre'){c.strokeStyle=acc;c.beginPath();c.arc(q[0],q[1],7,0,7);c.moveTo(q[0]-11,q[1]);c.lineTo(q[0]+11,q[1]);c.moveTo(q[0],q[1]-11);c.lineTo(q[0],q[1]+11);c.stroke()}
-  else{c.fillStyle=acc;c.strokeStyle=css('--panel');c.beginPath();c.arc(q[0],q[1],m.k==='midpoint'?4:5.5,0,7);c.fill();c.stroke()}c.globalAlpha=1};
- if(measHover)mark(measHover,.55);meas.forEach(m=>mark(m,1));
+  else{c.fillStyle=acc;c.strokeStyle=css('--panel');c.beginPath();c.arc(q[0],q[1],m.k==='midpoint'?4.5:6,0,7);c.fill();c.stroke()}c.globalAlpha=1};
+ const tag=(t,X,Y)=>{c.font='500 12px '+css('--mono');const tw=c.measureText(t).width;c.fillStyle=css('--ink');c.fillRect(X-6,Y-11,tw+12,21);c.fillStyle=css('--panel');c.textAlign='left';c.textBaseline='middle';c.fillText(t,X,Y);return tw};
+ if(measHover)mark(measHover,.85);meas.forEach(m=>mark(m,1));
+ if(measHover&&meas.length===1){const a=S(meas[0].p),b=S(measHover.p);if(a&&b){c.setLineDash([6,5]);c.strokeStyle=acc;c.lineWidth=2;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke();c.setLineDash([]);
+  tag(fmt(Math.hypot(...[0,1,2].map(i=>measHover.p[i]-meas[0].p[i]))),(a[0]+b[0])/2-20,(a[1]+b[1])/2)}}
+ if(measHover&&measCursor){const q=S(measHover.p),m=measCursor,up=m.type==='touch'||m.type==='pen',w=stage.clientWidth,h=stage.clientHeight;
+  const t={corner:'Corner',midpoint:'Edge midpoint',centre:'Centre',surface:'Surface'}[measHover.k]+(measHover.s&&measHover.s.line?' · line '+measHover.s.line:'');
+  c.font='500 12px '+css('--mono');const tw=c.measureText(t).width,lx=Math.min(Math.max(8,m.x-(up?tw/2:-18)),w-tw-16),ly=up?Math.max(20,m.y-70):Math.min(h-20,m.y+26);
+  if(q){c.strokeStyle=css('--ink');c.lineWidth=1;c.beginPath();c.moveTo(q[0],q[1]);c.lineTo(lx+tw/2,ly);c.stroke()}tag(t,lx,ly)}
  if(meas.length===2){const a=S(meas[0].p),b=S(meas[1].p);if(!a||!b)return;c.strokeStyle=acc;c.lineWidth=2.5;c.setLineDash([]);c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke();
   const t=fmt(Math.hypot(...[0,1,2].map(i=>meas[1].p[i]-meas[0].p[i]))),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;c.font='500 13px '+css('--mono');const tw=c.measureText(t).width;
   c.fillStyle=css('--panel');c.fillRect(mx-tw/2-6,my-11,tw+12,21);c.fillStyle=css('--ink');c.textAlign='center';c.textBaseline='middle';c.fillText(t,mx,my);c.textAlign='left';c.textBaseline='alphabetic'}}
