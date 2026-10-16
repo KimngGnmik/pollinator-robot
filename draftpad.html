@@ -350,8 +350,13 @@ function threeInit(){
  const root=new THREE.Group();sc.add(root);const notes=new THREE.Group();sc.add(notes);
  return{r,sc,cam,ctl,sun,ground,root,notes,objs:[],meshes:[],fitPending:true}}
 function applyHighlight(){if(!T)return;const acc=new THREE.Color(col('var(--accent)'));T.meshes.forEach(({mesh,edges,so})=>{const on=selLine&&so.line===selLine&&!measuring;mesh.material.emissive=on?acc:new THREE.Color(0);mesh.material.emissiveIntensity=on?.45:0;if(edges){edges.material.opacity=on?1:.25;edges.material.color.set(on?acc:0x000000)}})}
+// the status strip: where the part(s) a line made actually ended up, after all the maths, moves and rotations
+const num=v=>{const r=scene.units==='mm'?(Math.round(v*10)/10).toFixed(1):(Math.round(v*100)/100).toFixed(2);return(+r===0?r.replace('-',''):r).replace('-','−')};
 function describe(line){const items=scene.solids.filter(s=>s.line===line);const src=$('src').value.split('\n')[line-1]||'';
- $('status').innerHTML=items.length?`<b>line ${line}</b> · ${items.length} part${items.length>1?'s':''} (${[...new Set(items.map(i=>i.kind))].join(', ')}) · <span>${src.trim().replace(/</g,'&lt;').slice(0,90)}</span>`:`<b>line ${line}</b> · no part made here · ${src.trim().replace(/</g,'&lt;').slice(0,90)}`}
+ if(!items.length){$('status').innerHTML=`<b>line ${line}</b> · no part made here · <span>${src.trim().replace(/</g,'&lt;').slice(0,90)}</span>`;return}
+ let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];items.forEach(s=>{const e=extOf(s);for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],e.lo[i]);hi[i]=Math.max(hi[i],e.hi[i])}});
+ const kinds=[...new Set(items.map(i=>i.kind))].join(', ');
+ $('status').innerHTML=`<b>line ${line}</b> · ${items.length>1?items.length+' parts ('+kinds+')':kinds} · `+['x','y','z'].map((a,i)=>`${a} ${num(lo[i])}→${num(hi[i])}`).join(' · ')}
 function select(line,fromViewer){selLine=line;applyHighlight();describe(line);if(MODE!=='3d')render();
  if(fromViewer){const lines=$('src').value.split('\n');let a=0;for(let i=0;i<line-1;i++)a+=lines[i].length+1;const ta=$('src');ta.setSelectionRange(a,a+lines[line-1].length);
   if(!fromViewer.touch)ta.focus({preventScroll:true});const lh=parseFloat(getComputedStyle(ta).lineHeight)||19.5;ta.scrollTop=Math.max(0,(line-4)*lh)}}
@@ -489,7 +494,7 @@ function tick(ts){requestAnimationFrame(tick);if(!scene)return;
  if(lastTs==null)lastTs=ts;const dt=Math.min(.1,(ts-lastTs)/1000);lastTs=ts;
  if(scene.animate&&playing){tAnim+=dt*(+$('speed').value);$('tnum').textContent=tAnim.toFixed(2)+' s'}
  if(scene.animate){try{scene.animate(tAnim)}catch(e){$('err').textContent=e.message}
-  if(playing&&++limitTick%10===0&&checkLimits())applyOver()}
+  if(playing&&++limitTick%10===0){if(checkLimits())applyOver();if(selLine)describe(selLine)}}
  if(MODE==='3d')render();else if(scene.animate&&playing)render()}
 
 /* ---------- SVG export (orthographic, painter's order) ---------- */
@@ -529,6 +534,7 @@ function run(refit){const src=$('src').value;$('err').textContent='';
  $('playG').hidden=!scene.animate;tAnim=0;if(scene.animate){try{scene.animate(0)}catch(e){$('err').textContent=e.message}}
  try{checkLimits()}catch(e){}
  if(T){if(refit)T.fitPending=true;threeBuild()}
+ if(selLine)describe(selLine);
  render()}
 
 /* ---------- pencil layer ---------- */
