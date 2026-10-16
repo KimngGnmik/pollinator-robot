@@ -1,0 +1,5 @@
+{
+  "name": "Stinger",
+  "code": "sheet({title:'Stinger', units:'in'})\n\n// Robots must fit inside the 18 x 18 x 18 box during initialization: \n// corner at x=0, y=0, z=0; 18 along x, 18 along y, 18 tall\nbox(-9,-9,0, 18,18,18, {fill:C.white, alpha:0.15, limit:true})\n\n\n// Variables\nconst W=17, L=17          // frame outside width (x) and length (y)\nconst T=2.76, H=3.72, Z0=1  // rail thickness, rail height, bottom of the rails above the tiles\n\n\nbox(-W/2.11, -L/2, Z0,  T, L, H, {fill:C.alu})   // left rail\nbox(W/3.33, -L/2, Z0, T, L, H, {fill: C.alu}) // right rail\nbox(-5.3, 6, 1.81, 10.39, 1.89, 0.47, {fill: C.alu})",
+  "savedAt": "2026-10-16T02:35:27.088Z"
+}
