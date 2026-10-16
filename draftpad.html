@@ -545,16 +545,31 @@ function toSVG(){const w=stage.clientWidth,h=stage.clientHeight;buildGeo();const
 /* ---------- run ---------- */
 // user code runs as an injected inline script (no eval, so it works under the page's CSP)
 // prepend __L(n) at the start of each line that begins outside ( ) [ ] and strings, so parts remember their source line
-function instrument(src){const lines=src.split('\n');let depth=0,str=null,out=[];
- for(let i=0;i<lines.length;i++){const ln=lines[i],start0=depth===0&&!str;let cut=ln.length;
-  for(let k=0;k<ln.length;k++){const ch=ln[k];if(str){if(ch==='\\'){k++;continue}if(ch===str)str=null;continue}
-   if(ch==='/'&&ln[k+1]==='/'){cut=k;break}if(ch==='"'||ch==="'"||ch==='`'){str=ch;continue}if(ch==='('||ch==='[')depth++;else if(ch===')'||ch===']')depth=Math.max(0,depth-1)}
+// Marks each statement with its line number (__L) and, after a one-line const/let/var, notes its values (__V) for the status strip.
+// A marker only goes where a new statement can start: not inside ( ), [ ] or an object literal { }, and not on a line that
+// continues the previous one (else, catch, .method, an operator) or follows one ending in a comma or operator.
+function instrument(src){const lines=src.split('\n'),CONT=/^\s*(else\b|catch\b|finally\b|[.?:,+\-*\/%&|^=<>)\]}])/;
+ const code=[],ends=[];let depth=0,str=null,stack=[],last='';const out=[],state=[];
+ for(let i=0;i<lines.length;i++){const ln=lines[i];let cut=ln.length;
+  state.push({free:depth===0&&!str&&stack[stack.length-1]!=='obj'});
+  for(let k=0;k<ln.length;k++){const ch=ln[k];
+   if(str){if(ch==='\\'){k++;continue}if(ch===str)str=null;continue}
+   if(ch==='/'&&ln[k+1]==='/'){cut=k;break}
+   if(ch==='"'||ch==="'"||ch==='`'){str=ch;last=ch;continue}
+   if(ch==='('||ch==='[')depth++;else if(ch===')'||ch===']')depth=Math.max(0,depth-1);
+   else if(ch==='{')stack.push(/[=(,:\[?]/.test(last)||/\breturn\s*$/.test(ln.slice(0,k))?'obj':'block');
+   else if(ch==='}')stack.pop();
+   if(!/\s/.test(ch))last=ch}
   if(str&&str!=='`')str=null;
-  const pre=start0?'__L('+(i+1)+');':'',code=ln.slice(0,cut),m=code.match(/^\s*(?:const|let|var)\s+/);
-  // a complete `const/let/var` line: afterwards, note its values so the status strip can show them
-  if(start0&&depth===0&&!str&&m&&!/[,(\[{=+\-*\/%&|?:.]$/.test(code.trimEnd())){const names=declNames(code.slice(m[0].length));
-   if(names.length){out.push(pre+code+';__V('+(i+1)+',()=>({'+names.join(',')+'}))'+ln.slice(cut));continue}}
-  out.push(pre+ln)}
+  code.push(ln.slice(0,cut).trimEnd());state[i].endFree=depth===0&&!str&&stack[stack.length-1]!=='obj'}
+ const nextCode=i=>{for(let k=i+1;k<lines.length;k++)if(code[k].trim())return code[k];return''};
+ let prevEnd='';
+ for(let i=0;i<lines.length;i++){const ln=lines[i],c=code[i];
+  const start=state[i].free&&!CONT.test(ln)&&!/[,(\[=+\-*\/%&|^?:<>.!]$/.test(prevEnd);
+  const pre=start?'__L('+(i+1)+');':'',m=c.match(/^\s*(?:const|let|var)\s+/);
+  if(start&&m&&state[i].endFree&&!/[,(\[{=+\-*\/%&|?:.]$/.test(c)&&!CONT.test(nextCode(i))){const names=declNames(c.slice(m[0].length));
+   if(names.length){out.push(pre+c+';__V('+(i+1)+',()=>({'+names.join(',')+'}))'+ln.slice(c.length));if(c.trim())prevEnd=c;continue}}
+  out.push(pre+ln);if(c.trim())prevEnd=c}
  return out.join('\n')}
 function declNames(s){const names=[];let d=0,q=null,expect=true;
  for(let k=0;k<s.length;k++){const ch=s[k];if(q){if(ch==='\\'){k++;continue}if(ch===q)q=null;continue}
