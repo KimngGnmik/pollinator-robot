@@ -265,7 +265,7 @@ function makeAPI(){
  scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],animate:null};
  const solid=(faces,o,pivot)=>{o=o||{};const h=handle(o.pivot||pivot,o.part);scene.handles.push(h);
   const all=[].concat(...faces),sc=cen(all);
-  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit});return h};
+  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:o.limit===true,noLimit:o.limit===false});return h};
  const api={C,__L(n){curLine=n},
   sheet(o){Object.assign(scene,o||{})},
   part(o){o=o||{};const h=handle(o.pivot||[0,0,0],o.part);scene.handles.push(h);return h},
@@ -294,11 +294,18 @@ function extOf(s){let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];const add=p=>{for(let
 const SIDE=[['left','right'],['front','back'],['bottom','top']];   // -x/+x, -y/+y (front is -y), -z/+z
 // returns true when the set of red parts changed
 function checkLimits(){
- const key=()=>[...scene.over].map(s=>scene.solids.indexOf(s)).join(),before=scene.over?key():'',w=$('warn'),lim=scene.solids.filter(s=>s.limit);
- scene.over=new Set();w.dataset.line='';
+ const key=()=>[...scene.over].map(s=>scene.solids.indexOf(s)).join(),before=scene.over?key():'',w=$('warn');
+ let lim=scene.solids.filter(s=>s.limit),auto=null;
+ if(!lim.length){   // no box marked limit:true: a see-through box that most other parts sit inside is taken as the sizing box
+  const others=scene.solids.filter(s=>s.kind!=='box'||s.alpha>0.5||s.noLimit),cen=s=>{const e=extOf(s);return[0,1,2].map(i=>(e.lo[i]+e.hi[i])/2)};
+  let best=0;scene.solids.forEach(c=>{if(c.kind!=='box'||c.alpha>0.5||c.noLimit)return;const b=extOf(c);
+   const n=others.filter(s=>{const p=cen(s);return[0,1,2].every(i=>p[i]>=b.lo[i]&&p[i]<=b.hi[i])}).length;
+   if(n>best&&n>=others.length/2){best=n;auto=c}});
+  if(auto)lim=[auto]}
+ scene.over=new Set();scene.limitBox=lim[0]||null;w.dataset.line='';
  if(!lim.length){w.hidden=true;return before!==''}
  const B=lim.map(extOf),tol=1e-6,out=[];
- scene.solids.forEach(s=>{if(s.limit)return;const e=extOf(s);
+ scene.solids.forEach(s=>{if(lim.includes(s))return;const e=extOf(s);
   if(B.some(b=>[0,1,2].every(i=>e.lo[i]>=b.lo[i]-tol&&e.hi[i]<=b.hi[i]+tol)))return;
   scene.over.add(s);const b=B[0];let worst=0,msg='';
   for(let i=0;i<3;i++){const lo=b.lo[i]-e.lo[i],hi=e.hi[i]-b.hi[i];if(lo>worst){worst=lo;msg=fmt(lo)+' past the '+SIDE[i][0]}if(hi>worst){worst=hi;msg=fmt(hi)+' past the '+SIDE[i][1]}}
@@ -307,8 +314,9 @@ function checkLimits(){
  if(out.length){const by=new Map();out.forEach(o=>{if(!by.has(o.line))by.set(o.line,o.msg)});w.dataset.line=out[0].line||'';
   w.className='warn bad';w.textContent=`${out.length} part${out.length>1?'s':''} outside the ${size} limit: `+[...by].slice(0,3).map(([l,m])=>(l?'line '+l+' ':'')+'sticks out '+m).join(' · ')+(by.size>3?' · …':'')}
  else{w.className='warn ok';w.textContent=`Everything fits inside the ${size} limit.`}
+ if(auto)w.textContent+=` (the see-through box on line ${auto.line} is the limit; limit:false on it turns this off)`
  return key()!==before}
-function applyOver(){if(!T||!scene.over)return;const any=scene.over.size>0;T.meshes.forEach(({mesh,so})=>mesh.material.color.set(scene.over.has(so)||(so.limit&&any)?OVER:so.fill))}
+function applyOver(){if(!T||!scene.over)return;const any=scene.over.size>0;T.meshes.forEach(({mesh,so})=>mesh.material.color.set(scene.over.has(so)||(so===scene.limitBox&&any)?OVER:so.fill))}
 
 /* ---------- shared geometry ---------- */
 function fmt(v){return scene.units==='mm'?(Math.round(v*10)/10).toFixed(1):(Math.round(v*100)/100).toFixed(2)+'"'}
@@ -394,12 +402,12 @@ let G=null;
 function buildGeo(){
  const pos=[],nrm=[],colr=[],edge=[],tris=[];let verts=[];
  const accH=hex3(col('var(--accent)').length===7?col('var(--accent)'):'#b8402f');
- scene.solids.forEach(s=>{let c=hex3(s.fill);if(scene.over&&(scene.over.has(s)||(s.limit&&scene.over.size)))c=hex3(OVER);if(selLine&&s.line===selLine)c=c.map((v,i)=>v*.45+accH[i]*.55);
+ scene.solids.forEach(s=>{let c=hex3(s.fill);if(scene.over&&(scene.over.has(s)||(s===scene.limitBox&&scene.over.size)))c=hex3(OVER);if(selLine&&s.line===selLine)c=c.map((v,i)=>v*.45+accH[i]*.55);
   if(s.sphere){const [x0,y0,z0,r]=s.sphere,[x,y,z]=xf([x0,y0,z0],s.h),NA=28,NB=14,P=(a,b)=>{const t=a/NA*2*Math.PI,u=b/NB*Math.PI,d=[Math.cos(t)*Math.sin(u),Math.sin(t)*Math.sin(u),Math.cos(u)];return[[x+r*d[0],y+r*d[1],z+r*d[2]],d]};
    for(let a=0;a<NA;a++)for(let b=0;b<NB;b++){const q=[P(a,b),P(a+1,b),P(a+1,b+1),P(a,b+1)];[[0,1,2],[0,2,3]].forEach(t=>{t.forEach(k=>{pos.push(...q[k][0]);nrm.push(...q[k][1]);colr.push(...c)});tris.push({p:t.map(k=>q[k][0]),n:cen(t.map(k=>q[k][1])),c:s.fill})})}
    verts.push([x-r,y-r,z-r],[x+r,y+r,z+r]);return}
   s.faces.forEach(f0=>{const pts=f0.pts.map(p=>xf(p,s.h)),n=newell(pts),f={pts,n};verts.push(...pts);
-   if(!s.limit)triFan(f).forEach(t=>{t.forEach(k=>{pos.push(...pts[k]);nrm.push(...n);colr.push(...c)});tris.push({p:t.map(k=>pts[k]),n,c:s.fill})});   // a limit box is drawn as an outline only
+   if(s!==scene.limitBox)triFan(f).forEach(t=>{t.forEach(k=>{pos.push(...pts[k]);nrm.push(...n);colr.push(...c)});tris.push({p:t.map(k=>pts[k]),n,c:s.fill})});   // a limit box is drawn as an outline only
    for(let i=0;i<pts.length;i++)edge.push(...pts[i],...pts[(i+1)%pts.length])})});
  G={pos:new Float32Array(pos),nrm:new Float32Array(nrm),col:new Float32Array(colr),edge:new Float32Array(edge),tris,verts,n:pos.length/3,ne:edge.length/3}}
 function frame(w,h){
