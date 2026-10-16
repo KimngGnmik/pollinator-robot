@@ -55,6 +55,9 @@ button { cursor: pointer; }
 .stage.marking #ink { pointer-events: auto; cursor: crosshair; }
 .drawbar input[type=range] { width: 90px; accent-color: var(--accent); }
 .card .fix { display: flex; }
+.measbar { left: 10px; bottom: 44px; max-width: calc(100% - 20px); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; font: 13px/1.4 var(--f-mono); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+.measbar b { font-size: 18px; font-weight: 500; }
+.measbar .d { color: var(--muted); font-variant-numeric: tabular-nums; }
 .card .fix button { flex: 1; padding: 6px 4px; font-size: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--raise); }
 .seg button { border: 0; background: none; padding: 7px 12px; min-height: 36px; font-weight: 500; }
@@ -170,7 +173,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
       <button data-rev="A">Rev A</button><button data-rev="B">Rev B</button><button data-rev="C" aria-pressed="true">Rev C</button><button data-rev="none">Blank</button>
     </div>
     <div class="seg" id="modeSeg" role="group" aria-label="Mode">
-      <button data-mode="view" aria-pressed="true">3D view</button><button data-mode="draw">Draw parts</button><button data-mode="markup">Markup</button>
+      <button data-mode="view" aria-pressed="true">3D view</button><button data-mode="draw">Draw parts</button><button data-mode="markup">Markup</button><button data-mode="measure">Measure</button>
     </div>
     <div class="spacer"></div>
     <nav class="links" aria-label="Other pages"><a href="./">3D viewer</a><a href="animate.html">Animation</a><a href="draftpad.html">Draftpad</a></nav>
@@ -183,6 +186,7 @@ dialog::backdrop { background: rgba(10,12,14,.45); }
       <canvas class="layer" id="ov"></canvas>
       <canvas class="layer" id="ink"></canvas>
       <div class="over loading" id="loading">Loading Rev C…</div>
+      <div class="over measbar" id="measBar" hidden role="status"></div>
       <div class="over drawbar" id="markbar" hidden>
         <span class="lbl">Pencil markup</span>
         <input type="color" id="inkColor" value="#d6452f" aria-label="Ink colour">
@@ -586,7 +590,27 @@ function shoot({ball: type = "pollen", speed = 22, angle = 60, from, cd = 0.5, s
   return res;
 }
 
-const API = {part, parts, tagged, spin, onFrame, box, cyl, rod, ball, extrude, tube, rect, circle, shoot, hive, log, T, THREE};
+// a dimension line between two points [x, w, z], labelled with its length (or your own label)
+function textSprite(text, color) {
+  const c = document.createElement("canvas"), x = c.getContext("2d"), font = "500 44px " + css("--f-mono");
+  x.font = font; const w = Math.ceil(x.measureText(text).width) + 28; c.width = w; c.height = 64;
+  x.fillStyle = css("--panel"); x.globalAlpha = 0.9; x.fillRect(0, 0, w, 64); x.globalAlpha = 1;
+  x.font = font; x.fillStyle = color; x.textBaseline = "middle"; x.fillText(text, 14, 33);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false, sizeAttenuation: false}));
+  sp.scale.set(0.045 * w / 64, 0.045, 1); sp.renderOrder = 9; return sp;
+}
+function dim(a, b, {label, color} = {}) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 3 || b.length !== 3) throw new Error("dim needs two points: dim([x, w, z], [x, w, z])");
+  const A = T(...a), B = T(...b), d = A.distanceTo(B), col = color || css("--accent"), g = new THREE.Group();
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([A, B]), new THREE.LineBasicMaterial({color: col, depthTest: false, transparent: true}));
+  line.renderOrder = 8; g.add(line);
+  for (const P of [A, B]) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), new THREE.MeshBasicMaterial({color: col, depthTest: false, transparent: true})); s.position.copy(P); s.renderOrder = 8; g.add(s); }
+  const sp = textSprite(label || `${d.toFixed(2)}"`, col); sp.position.copy(A).add(B).multiplyScalar(0.5); g.add(sp);
+  fxGroup.add(g);
+  return +d.toFixed(3);
+}
+
+const API = {part, parts, tagged, spin, onFrame, box, cyl, rod, ball, extrude, tube, rect, circle, shoot, hive, dim, log, T, THREE};
 const KEYS = Object.keys(API);
 const LINE_OFFSET = (() => {        // where line 1 of the user's code lands in this browser's stack traces
   try { new Function(...KEYS, '"use strict";\nthrow new Error("probe")')(); } catch (e) { const n = stackLine(e); return n == null ? null : n - 1; }
@@ -698,6 +722,7 @@ const SNIPS = [
   ["part", `part("Roller").color("#e2b714");`],
   ["move", `part("Roller 1").move(0, 0, 0.25);`],
   ["rotate", `part("Gate flipper").rotate("w", 30);`],
+  ["dim", `dim([0, -8, 1], [17.5, -8, 1]);`],
   ["spin", `spin(tagged("flywheel"), 600);`],
   ["onFrame", `onFrame((t, dt) => {\n  // runs every frame; t = seconds since Run\n});`],
   ["shoot", `shoot({ball: "nectar", speed: 26, angle: 60});`],
@@ -727,6 +752,7 @@ parts(/hood/i)     tagged("flywheel" | "intake" | "gate" | "arm" | "lid" | "hood
 <em>// Simulate</em>
 shoot({ball:"pollen"|"nectar", speed: ft/s, angle: deg, from?, cd: 0.5, slow: 0.5})
 hive({distance: in})   <em>front bumper to hive pivot; shoot() then reports the height at the opening</em>
+dim([x,w,z], [x,w,z], {label?})   <em>a dimension line; Measure → Keep in code writes these</em>
 onFrame((t, dt) => …)  log(…)  THREE  T(x,w,z) → three.js Vector3`;
 
 // ------------------------------------------------------------ tabs, console, parts list, inspector
@@ -821,10 +847,15 @@ const ray = new THREE.Raycaster();
 const ndc = e => { const b = renderer.domElement.getBoundingClientRect(); return new THREE.Vector2((e.clientX - b.left) / b.width * 2 - 1, -(e.clientY - b.top) / b.height * 2 + 1); };
 let downAt = null;
 renderer.domElement.addEventListener("pointerdown", e => { downAt = {x: e.clientX, y: e.clientY, t: performance.now()}; });
-renderer.domElement.addEventListener("pointerup", e => {
-  if (mode !== "view" || !downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6 || performance.now() - downAt.t > 400) return;
+function visibleHit(e) {
   ray.setFromCamera(ndc(e), camera);
-  const hit = ray.intersectObjects([robotRoot, userGroup], true).find(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+  return ray.intersectObjects([robotRoot, userGroup], true).find(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+}
+renderer.domElement.addEventListener("pointerup", e => {
+  if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6 || performance.now() - downAt.t > 400) return;
+  if (mode === "measure") return measureTap(e);
+  if (mode !== "view") return;
+  const hit = visibleHit(e);
   if (!hit) return select(null);
   let o = hit.object; const all = allParts();
   while (o && !all.some(r => r.obj === o)) o = o.parent;
@@ -854,11 +885,12 @@ const pressure = e => e.pointerType === "pen" ? (e.pressure || 0.5) : 0.5;
 function setMode(m) {
   mode = m;
   document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m));
-  $("drawbar").hidden = m !== "draw"; $("markbar").hidden = m !== "markup";
+  $("drawbar").hidden = m !== "draw"; $("markbar").hidden = m !== "markup"; $("measBar").hidden = m !== "measure";
+  if (m === "measure") { meas.pts = []; meas.hover = null; measInfo(); }
   stage.classList.toggle("marking", m === "markup");
   if (m === "draw") { camera = ortho; orbit.enabled = false; setPlane(draw.plane); }
   else { camera = persp; if (pan2d) pan2d.enabled = false; sketchGroup.clear(); cancelSketch(); }
-  orbit.enabled = m === "view";
+  orbit.enabled = m === "view" || m === "measure";
   if (m === "markup") {            // ink is drawn on the screen, so it belongs to one camera position: go back to it
     if (inkStrokes.length && inkPose) { persp.position.copy(inkPose.pos); orbit.target.copy(inkPose.target); persp.lookAt(orbit.target); }
     else inkPose = {pos: persp.position.clone(), target: orbit.target.clone()};
@@ -1066,7 +1098,7 @@ $("finDiscard").onclick = () => {
 $("finish").onsubmit = e => { e.preventDefault(); cancelSketch(); };
 function readout(p) {
   const el = $("readout");
-  if (mode !== "draw" || !p) { el.innerHTML = mode === "markup" ? "Markup is notes only, it doesn't change the code · Save image keeps them" : mode === "draw" ? "Draw with the pencil · two fingers pan and zoom · each shape becomes a line of code" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
+  if (mode !== "draw" || !p) { el.innerHTML = mode === "measure" ? "Measure: tap two points · drag to turn the view · inches" : mode === "markup" ? "Markup is notes only, it doesn't change the code · Save image keeps them" : mode === "draw" ? "Draw with the pencil · two fingers pan and zoom · each shape becomes a line of code" : "x = back from front bumper · w = right of centre · z = up · inches"; return; }
   const P = PLANES[draw.plane];
   el.innerHTML = `<b>${P.u}</b> ${p[0].toFixed(3)}  <b>${P.v}</b> ${p[1].toFixed(3)}  <b>${P.d}</b> ${(+draw.at).toFixed(3)} in`;
 }
@@ -1094,6 +1126,7 @@ function inkLine(x, pts, color, w) {
 const uvScreen = ([u, v]) => { const p = PLANES[draw.plane].r(u, v, draw.at).project(ortho); return [(p.x + 1) / 2 * stage.clientWidth, (1 - p.y) / 2 * stage.clientHeight]; };
 function drawOverlay() {
   const x = sizeLayer(ov);
+  if (mode === "measure") return drawMeasure(x);
   if (mode !== "draw") return;
   if (draw.live) inkLine(x, draw.live.map(([u, v, p]) => [...uvScreen([u, v]), p]), ACC, 3);
   const pv = draw.preview;
@@ -1141,6 +1174,75 @@ $("fitBtn").onclick = fitView;
 $("revSeg").onclick = e => { const b = e.target.closest("button"); if (b && b.dataset.rev !== rev) loadRev(b.dataset.rev); };
 new ResizeObserver(drawInk).observe(stage);
 
+// ------------------------------------------------------------ measure: tap two points; snaps to corners and part centres
+const meas = {pts: [], hover: null};
+const robotXYZ = v => { const r = toRobot(v); return [r.x, r.w, r.z]; };
+const n3 = n => +n.toFixed(3);
+function snapAt(e) {
+  const hit = visibleHit(e); if (!hit) return null;
+  const b = renderer.domElement.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top;
+  const scr = v => { const p = v.clone().project(camera); return [(p.x + 1) / 2 * b.width, (1 - p.y) / 2 * b.height]; };
+  let best = null, bd = 18;
+  const o = hit.object, pos = o.geometry.attributes.position, v = new THREE.Vector3(), stride = Math.max(1, Math.floor(pos.count / 30000));
+  o.updateWorldMatrix(true, false);
+  for (let i = 0; i < pos.count; i += stride) {            // nearest corner of the part you tapped
+    v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+    const q = scr(v), d = Math.hypot(q[0] - mx, q[1] - my);
+    if (d < bd) { bd = d; best = {p: v.clone(), k: "corner"}; }
+  }
+  let rec = null; const all = allParts();
+  for (let x = o; x && !rec; x = x.parent) rec = all.find(r => r.obj === x);
+  if (rec) {                                                // its centre: for a wheel or roller, the axle
+    const c = boxOf([rec]).getCenter(new THREE.Vector3()), q = scr(c), d = Math.hypot(q[0] - mx, q[1] - my);
+    if (d < 30 && d <= bd + 12) best = {p: c, k: "centre"};   // near the middle, the centre beats a corner that's only a little closer
+    if (best) best.name = rec.name;
+  }
+  return best || {p: hit.point.clone(), k: "surface", name: rec && rec.name};
+}
+function measureTap(e) {
+  const s = snapAt(e);
+  if (!s) return toast("Tap on a part to measure from it");
+  if (meas.pts.length >= 2) meas.pts = [];
+  meas.pts.push(s); measInfo();
+}
+let measHoverT = 0;
+renderer.domElement.addEventListener("pointermove", e => {
+  if (mode !== "measure" || e.pointerType === "touch" || e.buttons) return;
+  const now = performance.now(); if (now - measHoverT < 40) return; measHoverT = now;
+  meas.hover = snapAt(e);
+});
+renderer.domElement.addEventListener("pointerleave", () => { meas.hover = null; });
+function measInfo() {
+  const el = $("measBar"), [a, b] = meas.pts, where = s => `[${robotXYZ(s.p).map(n => n3(n)).join(", ")}]${s.name ? ` (${esc(s.name)} ${s.k === "centre" ? "centre" : s.k === "corner" ? "corner" : "surface"})` : ""}`;
+  if (!a) { el.innerHTML = `<span>Tap a point on the robot. It snaps to corners and to part centres (tap near the middle of a wheel for its axle).</span>`; return; }
+  if (!b) { el.innerHTML = `<span>From ${where(a)}. Tap a second point.</span><button class="btn small" id="measClear">Clear</button>`; $("measClear").onclick = () => { meas.pts = []; measInfo(); }; return; }
+  const A = robotXYZ(a.p), B = robotXYZ(b.p), d = a.p.distanceTo(b.p);
+  el.innerHTML = `<b>${d.toFixed(3)}"</b><span class="d">Δx ${n3(B[0] - A[0])}  Δw ${n3(B[1] - A[1])}  Δz ${n3(B[2] - A[2])}</span>
+    <button class="btn small primary" id="measKeep">Keep in code</button><button class="btn small" id="measClear">Clear</button>`;
+  $("measClear").onclick = () => { meas.pts = []; measInfo(); };
+  $("measKeep").onclick = () => setCode(appendLine(`dim([${A.map(n3).join(", ")}], [${B.map(n3).join(", ")}]);`), "Added as a dim() line. Undo removes it.");
+}
+function drawMeasure(x) {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const S = v => { const p = v.clone().project(camera); return p.z > 1 ? null : [(p.x + 1) / 2 * w, (1 - p.y) / 2 * h]; };
+  const mark = (m, alpha) => {
+    const q = S(m.p); if (!q) return;
+    x.globalAlpha = alpha; x.fillStyle = ACC; x.strokeStyle = css("--panel"); x.lineWidth = 2;
+    if (m.k === "centre") { x.beginPath(); x.arc(q[0], q[1], 7, 0, 7); x.stroke(); x.strokeStyle = ACC; x.lineWidth = 2; x.beginPath(); x.arc(q[0], q[1], 7, 0, 7); x.moveTo(q[0] - 11, q[1]); x.lineTo(q[0] + 11, q[1]); x.moveTo(q[0], q[1] - 11); x.lineTo(q[0], q[1] + 11); x.stroke(); }
+    else { x.beginPath(); x.arc(q[0], q[1], m.k === "surface" ? 4 : 5.5, 0, 7); x.fill(); x.stroke(); }
+    x.globalAlpha = 1;
+  };
+  if (meas.hover) mark(meas.hover, 0.55);
+  meas.pts.forEach(m => mark(m, 1));
+  if (meas.pts.length === 2) {
+    const a = S(meas.pts[0].p), b = S(meas.pts[1].p); if (!a || !b) return;
+    x.strokeStyle = ACC; x.lineWidth = 2.5; x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(b[0], b[1]); x.stroke();
+    const t = meas.pts[0].p.distanceTo(meas.pts[1].p).toFixed(2) + '"', mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    x.font = "500 14px " + css("--f-mono"); const tw = x.measureText(t).width;
+    x.fillStyle = css("--panel"); x.fillRect(mx - tw / 2 - 6, my - 12, tw + 12, 22); x.fillStyle = css("--fg"); x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(t, mx, my); x.textAlign = "start";
+  }
+}
+
 // ------------------------------------------------------------ render loop
 const clock = new THREE.Clock(); let elapsed = 0;
 renderer.setAnimationLoop(() => {
@@ -1154,7 +1256,7 @@ renderer.setAnimationLoop(() => {
   robotRoot.traverse(o => { if (o.isMesh) o.material.clippingPlanes = cut ? [cutPlane] : null; });
   if (selBox) selBox.update();
   drawOverlay();
-  if (mode === "view") orbit.update(); else pan2d?.update();
+  if (mode === "view" || mode === "measure") orbit.update(); else pan2d?.update();
   renderer.render(scene, camera);
 });
 
