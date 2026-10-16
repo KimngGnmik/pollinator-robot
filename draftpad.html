@@ -46,7 +46,9 @@ input[type=range]{width:90px;accent-color:var(--accent2)}
 label.l{color:var(--ink2);display:inline-flex;gap:4px;align-items:center}
 textarea{flex:1;resize:none;border:0;background:var(--code-bg);color:var(--ink);font:13px/1.5 var(--mono);padding:10px 12px;tab-size:2;white-space:pre;overflow:auto;min-height:160px}
 .status{font:12.5px/1.55 var(--mono);color:var(--ink2);padding:5px 10px;border-top:1px solid var(--rule);white-space:normal;overflow-wrap:anywhere}
-.status .row{color:var(--ink);white-space:pre-wrap}
+.status .parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 22px;margin:4px 0 2px}
+.status .part{display:grid;gap:1px}.status .part b{color:var(--ink2);font-weight:500}
+.status .ax{white-space:pre;color:var(--ink);font-variant-numeric:tabular-nums}.status .ax i{font-style:normal;font-weight:600}
 .status b{color:var(--accent);font-weight:500}
 .err{font:12px var(--mono);color:var(--accent);padding:4px 10px;min-height:1.2em;border-top:1px solid var(--rule);white-space:pre-wrap}
 .warn{font:12px var(--mono);padding:5px 10px;border-top:1px solid var(--rule);white-space:pre-wrap;cursor:pointer}.warn.bad{color:var(--accent);font-weight:500}.warn.ok{color:var(--ok);cursor:default}
@@ -354,16 +356,18 @@ function applyHighlight(){if(!T)return;const acc=new THREE.Color(col('var(--acce
 // the status strip: where the part(s) a line made actually ended up, after all the maths, moves and rotations
 const num=v=>{const r=scene.units==='mm'?(Math.round(v*10)/10).toFixed(1):(Math.round(v*100)/100).toFixed(2);return(+r===0?r.replace('-',''):r).replace('-','−')};
 const P3=p=>'('+p.map(num).join(', ')+')';
+const kindName=s=>({box:'box',cyl:'cylinder',sphere:'sphere',prism:'prism'}[s.kind]||'part');
 const moved=s=>{for(let h=s.h;h;h=h.parent)if(h.pos.some(v=>v)||h.rot.some(v=>v))return true;return false};
 function val(v){if(typeof v==='number')return Number.isInteger(v)?String(v).replace('-','−'):num(v);
  if(typeof v==='string')return JSON.stringify(v.length>28?v.slice(0,28)+'…':v);if(typeof v==='boolean'||v==null)return String(v);
  if(Array.isArray(v))return v.length<=4&&v.every(x=>typeof x==='number')?'['+v.map(val).join(', ')+']':'list of '+v.length;
  if(typeof v==='function')return 'function';if(v.pos&&v.rot)return 'a part';return 'object'}
 function describe(line){const items=scene.solids.filter(s=>s.line===line);const src=$('src').value.split('\n')[line-1]||'',st=$('status'),b=`<b>line ${line}</b> · `,esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
- if(items.length){   // each part: where it starts and ends on x, y and z (as written for a plain box; where it ended up otherwise)
-  const row=it=>{let a,e;if(it.kind==='box'&&it.args&&!moved(it)){a=it.args.slice(0,3);e=a.map((v,k)=>v+it.args[3+k])}else{const x=extOf(it);a=x.lo;e=x.hi}
-   return '<span class="row">'+['x','y','z'].map((n,k)=>`${n} ${num(a[k])} → ${num(e[k])}`).join('   ')+'</span>'};
-  st.innerHTML=b+(items.length>1?items.length+' parts<br>':'')+items.slice(0,8).map(row).join('<br>')+(items.length>8?'<br>and '+(items.length-8)+' more':'');return}
+ if(items.length){   // each part: where it starts and ends on x, y and z (as written for a plain box; where it ended up otherwise), one axis per line
+  const ends=items.slice(0,8).map(it=>{if(it.kind==='box'&&it.args&&!moved(it)){const a=it.args.slice(0,3);return[a,a.map((v,k)=>v+it.args[3+k])]}const x=extOf(it);return[x.lo,x.hi]});
+  const W=Math.max(...ends.flat(2).map(v=>num(v).length)),pad=v=>num(v).padStart(W),AXC=['#d64545','#2f9a55','#3f7fd9'];
+  const group=([a,e],n)=>'<div class="part">'+(items.length>1?'<b>Part '+(n+1)+'</b>':'')+['x','y','z'].map((q,k)=>`<span class="ax"><i style="color:${AXC[k]}">${q}</i>  ${pad(a[k])} → ${pad(e[k])}</span>`).join('')+'</div>';
+  st.innerHTML=b+(items.length>1?items.length+' parts':kindName(items[0]))+'<div class="parts">'+ends.map(group).join('')+'</div>'+(items.length>8?'and '+(items.length-8)+' more':'');return}
  const len=(a,c)=>num(Math.hypot(c[0]-a[0],c[1]-a[1],c[2]-a[2])),bits=[];
  scene.dims.filter(d=>d.line===line).forEach(d=>bits.push('dim · '+P3(d.a)+' → '+P3(d.b)+' · '+len(d.a,d.b)+' long'+(d.o.text?' · label “'+esc(d.o.text)+'”':'')));
  scene.lines.filter(l=>l.line===line).forEach(l=>bits.push('line · '+P3(l.a)+' → '+P3(l.b)+' · '+len(l.a,l.b)+' long'));
