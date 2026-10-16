@@ -269,17 +269,17 @@ function makeAPI(){
  scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],vars:{},collecting:true,animate:null};
  const solid=(faces,o,pivot)=>{o=o||{};const h=handle(o.pivot||pivot,o.part);scene.handles.push(h);
   const all=[].concat(...faces),sc=cen(all);
-  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit});return h};
+  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit,args:o.args,axis:o.axisName});return h};
  const api={C,__L(n){curLine=n},__V(n,f){try{const v=f();if(scene.collecting)(scene.vars[n]=scene.vars[n]||[]).push(v);else scene.vars[n]=[v]}catch(e){}},
   sheet(o){Object.assign(scene,o||{})},
   part(o){o=o||{};const h=handle(o.pivot||[0,0,0],o.part);scene.handles.push(h);return h},
   box(x,y,z,w,d,h,o){const P=(a,b,c)=>[x+a,y+b,z+c];
    const f=[[P(0,0,0),P(w,0,0),P(w,d,0),P(0,d,0)],[P(0,0,h),P(w,0,h),P(w,d,h),P(0,d,h)],[P(0,0,0),P(w,0,0),P(w,0,h),P(0,0,h)],
     [P(0,d,0),P(w,d,0),P(w,d,h),P(0,d,h)],[P(0,0,0),P(0,d,0),P(0,d,h),P(0,0,h)],[P(w,0,0),P(w,d,0),P(w,d,h),P(w,0,h)]];
-   return solid(f,Object.assign({kind:'box'},o),[x,y,z])},
+   return solid(f,Object.assign({kind:'box'},o,{args:[x,y,z,w,d,h]}),[x,y,z])},
   cyl(x,y,z,r,len,o){o=o||{};const ax=o.axis||'z',N=36,ring=(t)=>{const a=[];for(let i=0;i<N;i++){const q=i/N*2*Math.PI,c=r*Math.cos(q),s=r*Math.sin(q);
     a.push(ax==='z'?[x+c,y+s,z+t]:ax==='x'?[x+t,y+c,z+s]:[x+c,y+t,z+s])}return a};
-   const A=ring(0),B=ring(len),f=[A,B.slice().reverse()];for(let i=0;i<N;i++)f.push([A[i],A[(i+1)%N],B[(i+1)%N],B[i]]);return solid(f,Object.assign({kind:'cyl'},o),[x,y,z])},
+   const A=ring(0),B=ring(len),f=[A,B.slice().reverse()];for(let i=0;i<N;i++)f.push([A[i],A[(i+1)%N],B[(i+1)%N],B[i]]);return solid(f,Object.assign({kind:'cyl'},o,{args:[x,y,z,r,len],axisName:ax}),[x,y,z])},
   sphere(x,y,z,r,o){o=o||{};const h=handle(o.pivot||[x,y,z],o.part);scene.handles.push(h);scene.solids.push({h,line:curLine,kind:'sphere',sphere:[x,y,z,r],fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha});return h},
   prism(prof,y,d,o){o=o||{};const ax=o.axis||'y',M=(p,t)=>ax==='y'?[p[0],t,p[1]]:ax==='x'?[t,p[0],p[1]]:[p[0],p[1],t];
    const A=prof.map(p=>M(p,y)),B=prof.map(p=>M(p,y+d)),f=[A,B];for(let i=0;i<A.length;i++){const j=(i+1)%A.length;f.push([A[i],A[j],B[j],B[i]])}return solid(f,Object.assign({kind:'prism'},o),M(prof[0],y))},
@@ -353,14 +353,36 @@ function applyHighlight(){if(!T)return;const acc=new THREE.Color(col('var(--acce
 // the status strip: where the part(s) a line made actually ended up, after all the maths, moves and rotations
 const num=v=>{const r=scene.units==='mm'?(Math.round(v*10)/10).toFixed(1):(Math.round(v*100)/100).toFixed(2);return(+r===0?r.replace('-',''):r).replace('-','−')};
 const P3=p=>'('+p.map(num).join(', ')+')';
+// the arguments of the first kind(...) call on a line, as written (to show which variable set each size)
+function callArgs(src,kind){const i=src.search(new RegExp('\\b'+kind+'\\s*\\('));if(i<0)return[];let k=src.indexOf('(',i)+1,d=0,q=null,cur='';const out=[];
+ for(;k<src.length;k++){const ch=src[k];if(q){cur+=ch;if(ch==='\\'){cur+=src[++k]||'';continue}if(ch===q)q=null;continue}
+  if(ch==='"'||ch==="'"||ch==='`'){q=ch;cur+=ch;continue}
+  if(')]}'.includes(ch)){if(d===0){out.push(cur.trim());return out}d--}else if('([{'.includes(ch))d++;
+  if(ch===','&&d===0){out.push(cur.trim());cur='';continue}cur+=ch}
+ out.push(cur.trim());return out}
+const isNum=t=>/^[-+]?(\d+\.?\d*|\.\d+)$/.test((t||'').trim());
+const moved=s=>{for(let h=s.h;h;h=h.parent)if(h.pos.some(v=>v)||h.rot.some(v=>v))return true;return false};
+function partText(items,src,esc){const k=items[0].kind;if(!items.every(i=>i.kind===k&&i.args&&!moved(i)))return null;
+ const A=callArgs(src,k),many=items.length>1,named=t=>t&&!isNum(t)?esc(t)+' = ':'',warn=v=>v<0?' <b>⚠ negative</b>':'';
+ const span=(f,sz)=>num(Math.min(f,f+sz))+' to '+num(Math.max(f,f+sz)),list=f=>{const u=[...new Set(items.map(f))];return u.slice(0,3).join(' and ')+(u.length>3?' and '+(u.length-3)+' more':'')};   // each distinct range once
+ if(k==='box'){const sz=i=>i.args.slice(3,6),s0=sz(items[0]),same=items.every(i=>sz(i).every((v,j)=>Math.abs(v-s0[j])<1e-9));
+  const head=(many?items.length+' boxes, each ':'box ')+(same?s0.map(v=>num(Math.abs(v))).join(' × '):'(sizes vary)');
+  return head+' · '+['x','y','z'].map((a,j)=>`${a} ${list(i=>span(i.args[j],i.args[3+j]))} (${named(A[3+j])}${same?num(s0[j]):'…'} ${['wide','long','tall'][j]}${warn(Math.min(...items.map(i=>i.args[3+j])))})`).join(' · ')}
+ if(k==='cyl'){const ax=items[0].axis||'z',j='xyz'.indexOf(ax),[,,,r,len]=items[0].args,o=[0,1,2].filter(q=>q!==j);
+  if(!items.every(i=>(i.axis||'z')===ax&&i.args[3]===r&&i.args[4]===len))return null;
+  return (many?items.length+' cylinders, each ':'cylinder ')+'Ø'+num(2*r)+' × '+num(Math.abs(len))+' long along '+ax+
+   ` · ${ax} ${list(i=>span(i.args[j],len))} (${named(A[4])}${num(len)} long${warn(len)})`+
+   ' · centre '+list(i=>o.map(q=>'xyz'[q]+' '+num(i.args[q])).join(', '))+` · radius ${named(A[3])}${num(r)}${warn(r)}`}
+ return null}
 function val(v){if(typeof v==='number')return Number.isInteger(v)?String(v).replace('-','−'):num(v);
  if(typeof v==='string')return JSON.stringify(v.length>28?v.slice(0,28)+'…':v);if(typeof v==='boolean'||v==null)return String(v);
  if(Array.isArray(v))return v.length<=4&&v.every(x=>typeof x==='number')?'['+v.map(val).join(', ')+']':'list of '+v.length;
  if(typeof v==='function')return 'function';if(v.pos&&v.rot)return 'a part';return 'object'}
 function describe(line){const items=scene.solids.filter(s=>s.line===line);const src=$('src').value.split('\n')[line-1]||'',st=$('status'),b=`<b>line ${line}</b> · `,esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
- if(items.length){let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];items.forEach(s=>{const e=extOf(s);for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],e.lo[i]);hi[i]=Math.max(hi[i],e.hi[i])}});
-  const kinds=[...new Set(items.map(i=>i.kind))].join(', ');
-  st.innerHTML=b+(items.length>1?items.length+' parts ('+kinds+')':kinds)+' · '+['x','y','z'].map((a,i)=>`${a} ${num(lo[i])}→${num(hi[i])}`).join(' · ');return}
+ if(items.length){const html=partText(items,src,esc);if(html){st.innerHTML=b+html;return}
+  let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];items.forEach(s=>{const e=extOf(s);for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],e.lo[i]);hi[i]=Math.max(hi[i],e.hi[i])}});
+  const kinds=[...new Set(items.map(i=>i.kind))].join(', '),mv=items.some(moved);
+  st.innerHTML=b+(items.length>1?items.length+' parts ('+kinds+')':kinds)+' · '+(mv?'now at ':'')+['x','y','z'].map((a,i)=>`${a} ${num(lo[i])} to ${num(hi[i])} (${num(hi[i]-lo[i])})`).join(' · ');return}
  const len=(a,c)=>num(Math.hypot(c[0]-a[0],c[1]-a[1],c[2]-a[2])),bits=[];
  scene.dims.filter(d=>d.line===line).forEach(d=>bits.push('dim · '+P3(d.a)+' → '+P3(d.b)+' · '+len(d.a,d.b)+' long'+(d.o.text?' · label “'+esc(d.o.text)+'”':'')));
  scene.lines.filter(l=>l.line===line).forEach(l=>bits.push('line · '+P3(l.a)+' → '+P3(l.b)+' · '+len(l.a,l.b)+' long'));
