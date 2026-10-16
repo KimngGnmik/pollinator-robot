@@ -10,18 +10,18 @@
 :root{
   --paper:#f3f4f1; --paper2:#e9ebe6; --grid:#d6dad3; --ink:#1f2a33; --ink2:#5a6670;
   --rule:#c3c8c0; --accent:#b8402f; --accent2:#2f5f9e; --panel:#ffffff; --code-bg:#fbfbf9;
-  --ground:#cfd3d0; --tile:#b9bebb; --sky:#f6f7f4;
+  --ground:#cfd3d0; --tile:#b9bebb; --sky:#f6f7f4; --ok:#2f7a4a;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --sans:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --paper:#1b2026; --paper2:#151a1f; --grid:#2a323a; --ink:#e4e8ea; --ink2:#9aa6b0;
   --rule:#3a444e; --accent:#e06a58; --accent2:#7fa6dc; --panel:#232a31; --code-bg:#1e252c;
-  --ground:#2a3138; --tile:#3a434b; --sky:#1b2026; color-scheme:dark } }
+  --ground:#2a3138; --tile:#3a434b; --sky:#1b2026; --ok:#5fbf85; color-scheme:dark } }
 :root[data-theme="dark"]{
   --paper:#1b2026; --paper2:#151a1f; --grid:#2a323a; --ink:#e4e8ea; --ink2:#9aa6b0;
   --rule:#3a444e; --accent:#e06a58; --accent2:#7fa6dc; --panel:#232a31; --code-bg:#1e252c;
-  --ground:#2a3138; --tile:#3a434b; --sky:#1b2026; color-scheme:dark }
+  --ground:#2a3138; --tile:#3a434b; --sky:#1b2026; --ok:#5fbf85; color-scheme:dark }
 html,body{height:100%}
 body{margin:0;background:var(--paper2);color:var(--ink);font-family:var(--sans);font-size:14px;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px;box-sizing:border-box}
@@ -48,6 +48,7 @@ textarea{flex:1;resize:none;border:0;background:var(--code-bg);color:var(--ink);
 .status{font:11.5px var(--mono);color:var(--ink2);padding:4px 10px;border-top:1px solid var(--rule);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .status b{color:var(--accent);font-weight:500}
 .err{font:12px var(--mono);color:var(--accent);padding:4px 10px;min-height:1.2em;border-top:1px solid var(--rule);white-space:pre-wrap}
+.warn{font:12px var(--mono);padding:5px 10px;border-top:1px solid var(--rule);white-space:pre-wrap;cursor:pointer}.warn.bad{color:var(--accent);font-weight:500}.warn.ok{color:var(--ok);cursor:default}
 .stage{position:relative;flex:1;min-height:260px;overflow:hidden;background:var(--paper);touch-action:none}
 canvas{position:absolute;inset:0;width:100%;height:100%}
 #ov{pointer-events:none}
@@ -76,6 +77,7 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
     </div>
     <textarea id="src" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
     <div class="err" id="err"></div>
+    <div class="warn" id="warn" hidden role="status"></div>
     <div class="status" id="status">Click a part in the viewer, or put the cursor on a line, to link code and picture.</div>
     <details class="help"><summary>API</summary>
       <code>sheet({title, units:'in'|'mm'})</code> · all coordinates in those units, z up, front is −y<br>
@@ -85,6 +87,7 @@ details summary{cursor:pointer;color:var(--ink);font-weight:600}
       Every primitive returns a handle <code>h</code> with <code>h.pos=[dx,dy,dz]</code> and <code>h.rot=[rx,ry,rz]</code> in degrees about <code>h.pivot</code>. <code>part({pivot, part})</code> makes an empty handle to group things under.<br>
       <code>animate(t =&gt; { … })</code> runs every frame with t in seconds; change <code>pos</code> and <code>rot</code> inside it.<br>
       Selection: tap a part in the viewer to jump to its line; put the cursor on a line to highlight what it made.<br>
+      <code>limit(x,y,z, w,d,h)</code> or <code>box(…, {limit:true})</code> marks a size limit (e.g. the 18 in sizing box): anything sticking out of it turns red<br>
       <code>line(p1,p2,{dash,color})</code> · <code>dim(p1,p2,{off,text})</code> · <code>leader(p,'text',dx,dy)</code> · <code>text(p,'text')</code>
     </details>
   </section>
@@ -262,7 +265,7 @@ function makeAPI(){
  scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],animate:null};
  const solid=(faces,o,pivot)=>{o=o||{};const h=handle(o.pivot||pivot,o.part);scene.handles.push(h);
   const all=[].concat(...faces),sc=cen(all);
-  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha});return h};
+  scene.solids.push({h,line:curLine,kind:o.kind||'solid',faces:faces.map(f=>{let n=newell(f);const c=cen(f);if(n[0]*(c[0]-sc[0])+n[1]*(c[1]-sc[1])+n[2]*(c[2]-sc[2])<0)n=n.map(a=>-a);return{pts:f,n}}),fill:o.fill||C.alu,alpha:o.alpha==null?1:o.alpha,limit:!!o.limit});return h};
  const api={C,__L(n){curLine=n},
   sheet(o){Object.assign(scene,o||{})},
   part(o){o=o||{};const h=handle(o.pivot||[0,0,0],o.part);scene.handles.push(h);return h},
@@ -281,7 +284,31 @@ function makeAPI(){
   leader(p,t,dx,dy){scene.leaders.push({p,t,dx:dx==null?40:dx,dy:dy==null?-40:dy})},
   text(p,t,o){scene.texts.push({p,t,o:o||{}})},
   animate(fn){scene.animate=fn}};
+ api.limit=(x,y,z,w,d,h,o)=>api.box(x,y,z,w,d,h,Object.assign({fill:'#ffffff',alpha:.12},o,{limit:true}));
  return api}
+
+/* ---------- size limit: parts outside a limit box turn red ---------- */
+const OVER='#e0352b';let limitTick=0;
+function extOf(s){let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];const add=p=>{for(let i=0;i<3;i++){if(p[i]<lo[i])lo[i]=p[i];if(p[i]>hi[i])hi[i]=p[i]}};
+ if(s.sphere){const [x,y,z,r]=s.sphere,c=xf([x,y,z],s.h);add([c[0]-r,c[1]-r,c[2]-r]);add([c[0]+r,c[1]+r,c[2]+r])}else s.faces.forEach(f=>f.pts.forEach(p=>add(xf(p,s.h))));return{lo,hi}}
+const SIDE=[['left','right'],['front','back'],['bottom','top']];   // -x/+x, -y/+y (front is -y), -z/+z
+// returns true when the set of red parts changed
+function checkLimits(){
+ const key=()=>[...scene.over].map(s=>scene.solids.indexOf(s)).join(),before=scene.over?key():'',w=$('warn'),lim=scene.solids.filter(s=>s.limit);
+ scene.over=new Set();w.dataset.line='';
+ if(!lim.length){w.hidden=true;return before!==''}
+ const B=lim.map(extOf),tol=1e-6,out=[];
+ scene.solids.forEach(s=>{if(s.limit)return;const e=extOf(s);
+  if(B.some(b=>[0,1,2].every(i=>e.lo[i]>=b.lo[i]-tol&&e.hi[i]<=b.hi[i]+tol)))return;
+  scene.over.add(s);const b=B[0];let worst=0,msg='';
+  for(let i=0;i<3;i++){const lo=b.lo[i]-e.lo[i],hi=e.hi[i]-b.hi[i];if(lo>worst){worst=lo;msg=fmt(lo)+' past the '+SIDE[i][0]}if(hi>worst){worst=hi;msg=fmt(hi)+' past the '+SIDE[i][1]}}
+  out.push({line:s.line,msg})});
+ const b=B[0],size=[0,1,2].map(i=>fmt(b.hi[i]-b.lo[i])).join(' × ');w.hidden=false;
+ if(out.length){const by=new Map();out.forEach(o=>{if(!by.has(o.line))by.set(o.line,o.msg)});w.dataset.line=out[0].line||'';
+  w.className='warn bad';w.textContent=`${out.length} part${out.length>1?'s':''} outside the ${size} limit: `+[...by].slice(0,3).map(([l,m])=>(l?'line '+l+' ':'')+'sticks out '+m).join(' · ')+(by.size>3?' · …':'')}
+ else{w.className='warn ok';w.textContent=`Everything fits inside the ${size} limit.`}
+ return key()!==before}
+function applyOver(){if(!T||!scene.over)return;const any=scene.over.size>0;T.meshes.forEach(({mesh,so})=>mesh.material.color.set(scene.over.has(so)||(so.limit&&any)?OVER:so.fill))}
 
 /* ---------- shared geometry ---------- */
 function fmt(v){return scene.units==='mm'?(Math.round(v*10)/10).toFixed(1):(Math.round(v*100)/100).toFixed(2)+'"'}
@@ -344,7 +371,7 @@ function threeBuild(){
   const mesh=new THREE.Mesh(g,mat);mesh.castShadow=so.alpha>=1;mesh.receiveShadow=!so.sphere;mesh.userData.solid=so;const grp=groupFor(so.h);grp.add(mesh);let edges=null;
   if(m.edge.length){const eg=new THREE.BufferGeometry();eg.setAttribute('position',new THREE.BufferAttribute(m.edge,3));edges=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x000000,transparent:true,opacity:.25}));grp.add(edges)}
   T.meshes.push({mesh,edges,so})});
- applyHighlight();
+ applyHighlight();applyOver();
  scene.handles.forEach(h=>groupFor(h));T.objs=[...gm.entries()];
  const acc=new THREE.Color(col('var(--accent)')),inkc=col('var(--ink)'),lsize=ext.r*0.06;
  const seg=(pts,color,dash)=>{const g=new THREE.BufferGeometry().setFromPoints(pts.map(p=>new THREE.Vector3(...p)));const l=new THREE.Line(g,dash?new THREE.LineDashedMaterial({color,dashSize:ext.r*.04,gapSize:ext.r*.025}):new THREE.LineBasicMaterial({color}));if(dash)l.computeLineDistances();T.notes.add(l)};
@@ -367,12 +394,12 @@ let G=null;
 function buildGeo(){
  const pos=[],nrm=[],colr=[],edge=[],tris=[];let verts=[];
  const accH=hex3(col('var(--accent)').length===7?col('var(--accent)'):'#b8402f');
- scene.solids.forEach(s=>{let c=hex3(s.fill);if(selLine&&s.line===selLine)c=c.map((v,i)=>v*.45+accH[i]*.55);
+ scene.solids.forEach(s=>{let c=hex3(s.fill);if(scene.over&&(scene.over.has(s)||(s.limit&&scene.over.size)))c=hex3(OVER);if(selLine&&s.line===selLine)c=c.map((v,i)=>v*.45+accH[i]*.55);
   if(s.sphere){const [x0,y0,z0,r]=s.sphere,[x,y,z]=xf([x0,y0,z0],s.h),NA=28,NB=14,P=(a,b)=>{const t=a/NA*2*Math.PI,u=b/NB*Math.PI,d=[Math.cos(t)*Math.sin(u),Math.sin(t)*Math.sin(u),Math.cos(u)];return[[x+r*d[0],y+r*d[1],z+r*d[2]],d]};
    for(let a=0;a<NA;a++)for(let b=0;b<NB;b++){const q=[P(a,b),P(a+1,b),P(a+1,b+1),P(a,b+1)];[[0,1,2],[0,2,3]].forEach(t=>{t.forEach(k=>{pos.push(...q[k][0]);nrm.push(...q[k][1]);colr.push(...c)});tris.push({p:t.map(k=>q[k][0]),n:cen(t.map(k=>q[k][1])),c:s.fill})})}
    verts.push([x-r,y-r,z-r],[x+r,y+r,z+r]);return}
   s.faces.forEach(f0=>{const pts=f0.pts.map(p=>xf(p,s.h)),n=newell(pts),f={pts,n};verts.push(...pts);
-   triFan(f).forEach(t=>{t.forEach(k=>{pos.push(...pts[k]);nrm.push(...n);colr.push(...c)});tris.push({p:t.map(k=>pts[k]),n,c:s.fill})});
+   if(!s.limit)triFan(f).forEach(t=>{t.forEach(k=>{pos.push(...pts[k]);nrm.push(...n);colr.push(...c)});tris.push({p:t.map(k=>pts[k]),n,c:s.fill})});   // a limit box is drawn as an outline only
    for(let i=0;i<pts.length;i++)edge.push(...pts[i],...pts[(i+1)%pts.length])})});
  G={pos:new Float32Array(pos),nrm:new Float32Array(nrm),col:new Float32Array(colr),edge:new Float32Array(edge),tris,verts,n:pos.length/3,ne:edge.length/3}}
 function frame(w,h){
@@ -447,7 +474,8 @@ function render(){
 function tick(ts){requestAnimationFrame(tick);if(!scene)return;
  if(lastTs==null)lastTs=ts;const dt=Math.min(.1,(ts-lastTs)/1000);lastTs=ts;
  if(scene.animate&&playing){tAnim+=dt*(+$('speed').value);$('tnum').textContent=tAnim.toFixed(2)+' s'}
- if(scene.animate){try{scene.animate(tAnim)}catch(e){$('err').textContent=e.message}}
+ if(scene.animate){try{scene.animate(tAnim)}catch(e){$('err').textContent=e.message}
+  if(playing&&++limitTick%10===0&&checkLimits())applyOver()}
  if(MODE==='3d')render();else if(scene.animate&&playing)render()}
 
 /* ---------- SVG export (orthographic, painter's order) ---------- */
@@ -485,6 +513,7 @@ function run(refit){const src=$('src').value;$('err').textContent='';
  try{const api=makeAPI();execUser(src,api);try{localStorage.setItem('draftpad.src',src)}catch(e){}}
  catch(e){$('err').textContent=e.message;if(!scene)scene={title:'Untitled',units:'in',solids:[],handles:[],lines:[],dims:[],leaders:[],texts:[],animate:null}}
  $('playG').hidden=!scene.animate;tAnim=0;if(scene.animate){try{scene.animate(0)}catch(e){$('err').textContent=e.message}}
+ try{checkLimits()}catch(e){}
  if(T){if(refit)T.fitPending=true;threeBuild()}
  render()}
 
@@ -518,6 +547,7 @@ $('svg').onclick=async()=>{const s=toSVG(),b=$('svg');try{await navigator.clipbo
 const exSel=$('example');Object.keys(EX).forEach(k=>{const o=document.createElement('option');o.textContent=k;exSel.appendChild(o)});
 exSel.onchange=()=>{$('src').value=EX[exSel.value];run(true)};
 $('run').onclick=()=>run(false);
+$('warn').onclick=()=>{const l=+$('warn').dataset.line;if(l)select(l,{touch:false})};
 const caretLine=()=>$('src').value.slice(0,$('src').selectionStart).split('\n').length;
 ['click','keyup','select'].forEach(ev=>$('src').addEventListener(ev,()=>{const l=caretLine();if(l!==selLine)select(l,false)}));
 // pick in 3D: a tap (not a drag) raycasts into the meshes
