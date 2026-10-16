@@ -51,7 +51,7 @@ textarea{flex:1;resize:none;border:0;background:var(--code-bg);color:var(--ink);
 .status .ax{white-space:pre;color:var(--ink);font-variant-numeric:tabular-nums}.status .ax i{font-style:normal;font-weight:600}
 .status b{color:var(--accent);font-weight:500}
 .err{font:12px var(--mono);color:var(--accent);padding:4px 10px;min-height:1.2em;border-top:1px solid var(--rule);white-space:pre-wrap}
-.warn{font:12px var(--mono);padding:5px 10px;border-top:1px solid var(--rule);white-space:pre-wrap;cursor:pointer}.warn.bad{color:var(--accent);font-weight:500}.warn.ok{color:var(--ok);cursor:default}
+.warn{font:12px var(--mono);padding:5px 10px;border-top:1px solid var(--rule);white-space:pre-wrap;cursor:pointer}.warn.bad{color:var(--accent);font-weight:500}.warn:not(.bad):not(.ok){color:var(--ink2);cursor:default}.warn.ok{color:var(--ok);cursor:default}
 .stage{position:relative;flex:1;min-height:260px;overflow:hidden;background:var(--paper);touch-action:none}
 canvas{position:absolute;inset:0;width:100%;height:100%}
 #ov{pointer-events:none}
@@ -308,6 +308,8 @@ function checkLimits(){
  const key=()=>[...scene.over].map(s=>scene.solids.indexOf(s)).join(),before=scene.over?key():'',w=$('warn'),lim=scene.solids.filter(s=>s.limit);
  scene.over=new Set();w.dataset.line='';
  if(!lim.length){w.hidden=true;return before!==''}
+ // the size limit is about the starting position: it's only checked while the animation is paused (or when nothing animates)
+ if(scene.animate&&playing){w.hidden=false;w.className='warn';w.textContent='Size limit is checked while paused. Pause (❚❚) to check this position; ↺ goes back to the start.';return before!==''}
  const B=lim.map(extOf),tol=1e-6,out=[];
  scene.solids.forEach(s=>{if(s.limit||s.field)return;const e=extOf(s);   // field:true parts (pollen, nectar, field pieces) aren't the robot
   if(B.some(b=>[0,1,2].every(i=>e.lo[i]>=b.lo[i]-tol&&e.hi[i]<=b.hi[i]+tol)))return;
@@ -524,7 +526,7 @@ function tick(ts){requestAnimationFrame(tick);if(!scene)return;
  if(lastTs==null)lastTs=ts;const dt=Math.min(.1,(ts-lastTs)/1000);lastTs=ts;
  if(scene.animate&&playing){tAnim+=dt*(+$('speed').value);$('tnum').textContent=tAnim.toFixed(2)+' s'}
  if(scene.animate){try{scene.animate(tAnim)}catch(e){$('err').textContent=e.message}
-  if(playing&&++limitTick%10===0){if(checkLimits())applyOver();if(selLine)describe(selLine)}}
+  if(++limitTick%10===0){if(checkLimits())applyOver();if(playing&&selLine)describe(selLine)}}
  if(MODE==='3d')render();else if(scene.animate&&playing)render()}
 
 /* ---------- SVG export (orthographic, painter's order) ---------- */
@@ -730,8 +732,8 @@ $('view').onchange=e=>{VIEW=e.target.value;if(MODE==='3d'&&T)threeFit();render()
 $('fit').onclick=()=>{if(MODE==='3d'&&T)threeFit();else{zoom=1;$('zoom').value=1}render()};
 $('zoom').oninput=e=>{zoom=+e.target.value;render()};
 $('grid').onchange=render;
-$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'❚❚':'▶';render()};
-$('tReset').onclick=()=>{tAnim=0;$('tnum').textContent='0.00 s';render()};
+$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'❚❚':'▶';if(checkLimits())applyOver();render()};
+$('tReset').onclick=()=>{tAnim=0;$('tnum').textContent='0.00 s';try{scene.animate&&scene.animate(0)}catch(e){}if(checkLimits())applyOver();if(selLine)describe(selLine);render()};
 new ResizeObserver(()=>{render();drawInk()}).observe(stage);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(T)threeBuild();render()});
 T=threeInit();if(!T){$('mode').value='schem';setMode('schem')}
