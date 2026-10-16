@@ -344,8 +344,32 @@ function buildFloor() {
   const tiles = new THREE.GridHelper(144, 6, css("--grid-a"), css("--grid-a"));   // 24 in foam tiles
   fine.position.y = -0.01; floor.add(fine, tiles);
   scene.background = new THREE.Color(css("--stage"));
+  buildAxes();
+}
+// Which way is which: FRONT / BACK / LEFT / RIGHT on the floor, and x / w / z arrows on the floor off the front-left corner
+function floorText(text, height, color) {
+  const c = document.createElement("canvas"), x = c.getContext("2d"), font = "700 96px " + css("--f-label");
+  x.font = font; const w = Math.ceil(x.measureText(text).width) + 24; c.width = w; c.height = 120;
+  x.font = font; x.fillStyle = color; x.textBaseline = "middle"; x.fillText(text, 12, 64);
+  const g = new THREE.PlaneGeometry(height * w / 120, height);
+  g.rotateX(-Math.PI / 2); g.rotateY(Math.PI);          // flat on the floor, readable from the front-right (the starting view)
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
+  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({map: t, transparent: true, depthWrite: false}));
+}
+function buildAxes() {
+  const g = new THREE.Group(), muted = css("--muted");
+  for (const [text, x, w] of [["FRONT", -5, 0], ["BACK", 22.5, 0], ["LEFT", HALF, -14], ["RIGHT", HALF, 14]]) {
+    const m = floorText(text, 2.4, muted); m.position.copy(T(x, w, 0.02)); g.add(m);
+  }
+  const O = T(-3, -12, 0.05);                            // just outside the robot, so nothing hides the arrows
+  for (const [axis, label, color] of [["x", "x → back", "#d64545"], ["w", "w → right", "#2f9a55"], ["z", "z ↑ up", "#3f7fd9"]]) {
+    const d = AXES[axis], a = new THREE.ArrowHelper(d, O, 5, color, 1, 0.6); g.add(a);
+    const sp = textSprite(label, color, 0.026); sp.position.copy(O).addScaledVector(d, 6.4); g.add(sp);
+  }
+  floor.add(g);
 }
 buildFloor();
+document.fonts?.ready.then(buildFloor);
 const retheme = () => { ACC = css("--accent"); buildFloor(); buildSketchGrid(); };
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
 new MutationObserver(retheme).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
@@ -591,13 +615,13 @@ function shoot({ball: type = "pollen", speed = 22, angle = 60, from, cd = 0.5, s
 }
 
 // a dimension line between two points [x, w, z], labelled with its length (or your own label)
-function textSprite(text, color) {
+function textSprite(text, color, size = 0.032) {
   const c = document.createElement("canvas"), x = c.getContext("2d"), font = "500 44px " + css("--f-mono");
   x.font = font; const w = Math.ceil(x.measureText(text).width) + 28; c.width = w; c.height = 64;
   x.fillStyle = css("--panel"); x.globalAlpha = 0.9; x.fillRect(0, 0, w, 64); x.globalAlpha = 1;
   x.font = font; x.fillStyle = color; x.textBaseline = "middle"; x.fillText(text, 14, 33);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false, sizeAttenuation: false}));
-  sp.scale.set(0.045 * w / 64, 0.045, 1); sp.renderOrder = 9; return sp;
+  sp.scale.set(size * w / 64, size, 1); sp.renderOrder = 9; return sp;
 }
 function dim(a, b, {label, color} = {}) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 3 || b.length !== 3) throw new Error("dim needs two points: dim([x, w, z], [x, w, z])");
